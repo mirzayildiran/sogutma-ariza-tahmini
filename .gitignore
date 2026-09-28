@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# train.py tarafından üretilen dosyalar
+data/
+models/
+
+# Yerel araçlar
+.DS_Store
+.streamlit/secrets.toml
