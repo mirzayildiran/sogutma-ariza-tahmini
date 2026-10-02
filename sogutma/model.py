@@ -50,8 +50,18 @@ class FaultPredictor:
         self.reg.fit(X[faulty], np.log1p(H.loc[faulty, "hours_to_failure"].clip(upper=MAX_ETA_H)))
         return self
 
+    def _impute(self, H: pd.DataFrame) -> np.ndarray:
+        """Eksik (NaN) öznitelikleri sağlıklı eğitim ortalamasıyla doldurur.
+
+        Sahada bir sensör hiç yoksa, o sinyal ne arıza ne de sağlık kanıtı sayılır
+        (nötr). IsolationForest ve StandardScaler zaten NaN kabul etmez; sınıflandırıcı
+        ve regresörde de belirsiz bir dal yerine bu öngörülebilir davranışı seçiyoruz.
+        Simülatör verisinde NaN olmadığından sonuçlar değişmez.
+        """
+        return H[FEATURES].fillna(self.normal_mean).to_numpy()
+
     def predict(self, H: pd.DataFrame) -> pd.DataFrame:
-        X = H[FEATURES].to_numpy()
+        X = self._impute(H)
         out = pd.DataFrame(index=H.index)
 
         s = self.iforest.score_samples(self.scaler.transform(X))
