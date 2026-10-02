@@ -103,7 +103,7 @@ Dikkat edilecek noktalar:
 - **Mutlak/bağıl basınç:** Simülatör basıncı **mutlak (bar)** olarak üretir ve doyma eğrisi mutlak basınç
   kullanır. Sahadaki transdüserler çoğunlukla **bağıl (gauge)** basınç verir; mutlak basınca çevrim (≈ +1,013 bar)
   veya modelin buna göre yeniden eğitilmesi gerekir.
-- **Doyma sıcaklığı:** Demo kod R404A için yaklaşık üstel bir eğri kullanır (`sogutma/simulator.py`). Sahada
+- **Doyma sıcaklığı:** Demo kod R404A için yaklaşık bir Antoine tipi eğri (`ln P = A − B/(T + C)`) kullanır (`sogutma/simulator.py`). Sahada
   gaz türüne uygun doğru bir doyma tablosu/kütüphanesi (ör. CoolProp) kullanılmalıdır; gaz değişince
   öznitelikler ve model yeniden değerlendirilmelidir.
 - **Kızgınlık / aşırı soğutma:** Demo veride doğrudan üretilir; sahada ölçülen sıcaklık ve basınçtan hesaplanır,

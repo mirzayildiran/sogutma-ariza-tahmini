@@ -31,7 +31,7 @@ def counts(at):
 def test_app_runs_without_exception(at):
     assert not at.exception
     total, normal, watch, critical = counts(at)
-    assert total == 8
+    assert total == 12
     assert normal + watch + critical == total
     assert len(at.tabs) == 5
     assert at.title[0].value.endswith("Soğutma Arıza Tahmini")
@@ -47,16 +47,16 @@ def test_time_slider_moves(at):
     assert at.session_state["t"] == lo
     ts = START + pd.Timedelta(hours=lo)
     assert any(f"Gün {(ts - START).days + 1}, {ts:%H:%M}" in m.value for m in at.sidebar.markdown)
-    assert counts(at)[0] == 8
+    assert counts(at)[0] == 12
     early = counts(at)
 
     at.slider[0].set_value(hi).run()
     assert not at.exception
     assert at.session_state["t"] == hi
     late = counts(at)
-    assert late[0] == 8 and sum(late[1:]) == 8
+    assert late[0] == 12 and sum(late[1:]) == 12
     # Başlangıçta ünite sağlıklı; zaman ilerleyince uyarılar artmalı
-    assert early[1] == 8
+    assert early[1] == 12
     assert late[2] + late[3] > 0
 
 

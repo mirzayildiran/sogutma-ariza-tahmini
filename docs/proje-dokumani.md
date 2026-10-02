@@ -162,13 +162,13 @@ flowchart LR
 
 ### 5.2 Simülatör
 
-Fizik esaslı bir soğuk oda simülatörü (termostat kontrollü kompresör, periyodik defrost, kapı açılışları,
-günlük dış ortam döngüsü, R404A doyma basıncı yaklaşımı) ve 5 arıza türü (gaz kaçağı, kondenser kirlenmesi,
+Fizik esaslı bir simülatör (üç ekipman tipi: soğuk oda, dondurucu oda ve market dolabı; termostat kontrollü
+kompresör, periyodik defrost, kapı/müşteri erişimleri, günlük dış ortam döngüsü, R404A doyma basıncı yaklaşımı) ve 5 arıza türü (gaz kaçağı, kondenser kirlenmesi,
 evaporatör buzlanması, kompresör aşınması, kondenser fanı arızası) için ilerleyen şiddet eğrisi
 mevcuttur. Proje boyunca:
 
 - Gerçek ölçümlerle **kalibre edilecek** (sinyal aralıkları, gürültü, dinamikler),
-- **Genişletilecek:** çoklu arıza, sensör arızaları, dondurucu (−18 °C) ve diğer ekipman tipleri, farklı
+- **Genişletilecek:** çoklu arıza, sensör arızaları, diğer ekipman tipleri (chiller vb.), farklı
   soğutucu akışkanlar, ani arızalar, talebe bağlı defrost, ürün yükü etkisi.
 
 ### 5.3 Anomali tespiti
@@ -346,12 +346,12 @@ Başvuran kuruluşun geçmişi, kapasitesi ve referansları: **[firma bilgileri 
 
 Bu depodaki prototip, projenin başlangıç noktasıdır:
 
-- Fizik esaslı soğuk oda simülatörü ve 5 arıza türü.
+- Fizik esaslı simülatör (soğuk oda, dondurucu, market dolabı) ve 5 arıza türü.
 - Anomali tespiti (Isolation Forest), arıza sınıflandırma ve kalan süre regresyonu (histogram tabanlı gradyan artırma).
 - Sağlık skoru ve Normal / İzlemede / Kritik durumları; açıklanabilir sinyal sapmaları.
 - Streamlit izleme paneli ve 30 günlük canlı oynatma senaryosu.
-- Sentetik test filosunda (40 ünite) elde edilen sonuçlar: saatlik doğruluk %99,5, makro F1 0,992, arıza
-  öncesi yakalama 25/25, medyan erken uyarı ≈ 6,6 gün, 0/40 yanlış alarm. **Bu değerler sentetik veri
+- Sentetik test filosunda (60 ünite: 30 soğuk oda, 15 dondurucu, 15 market dolabı) elde edilen sonuçlar: saatlik
+  doğruluk %99,4, makro F1 0,989, arıza öncesi yakalama 32/32, medyan erken uyarı ≈ 6,6 gün, 0/60 yanlış alarm. **Bu değerler sentetik veri
   üzerindedir** ve gerçek saha performansını göstermez. Ayrıntılar ve sınırlılıklar: [model-karti.md](model-karti.md).
 
 Kendi değerlendirmemizle bu çalışma, **kavram kanıtı** aşamasındadır (laboratuvar/simülasyon düzeyi);
