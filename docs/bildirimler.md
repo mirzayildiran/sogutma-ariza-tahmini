@@ -8,6 +8,11 @@ webhook adresine gönderir. Kod: `sogutma/bildirim.py`; komut satırı: `predict
 > (bkz. [Model Kartı](model-karti.md)). Mesajlar saha kontrolünün yerine geçmez.
 > **Varsayılan davranış deneme modudur: hiçbir şey gönderilmez.**
 
+> [!TIP]
+> Panelde **🔔 Bildirim Ayarları** sayfası, bu ayar dosyasını form üzerinden hazırlamanızı (ya da var olan
+> dosyayı yükleyip düzenlemenizi), ortam değişkenlerinin tanımlı olup olmadığını görmenizi ve kuralları demo
+> filosunda deneme modunda önizlemenizi sağlar. Bu sayfadan gerçek gönderim yapılmaz ve parola/token girilmez.
+
 ## 1. Nasıl çalışır?
 
 ```
