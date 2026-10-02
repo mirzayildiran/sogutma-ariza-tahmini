@@ -4,6 +4,7 @@
 """
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -18,7 +19,8 @@ from plotly.subplots import make_subplots
 from sogutma.faults import FAULT_TYPES, FAULTS, fault_name, short_name
 from sogutma.simulator import START
 
-ROOT = Path(__file__).parent
+# SOGUTMA_ROOT: veri/model klasörünü değiştirir (testler için); varsayılan proje klasörüdür
+ROOT = Path(os.environ.get("SOGUTMA_ROOT") or Path(__file__).parent)
 STATUS_STYLE = {"Normal": ("🟢", "#2e9e5b"), "İzlemede": ("🟠", "#e08a1e"), "Kritik": ("🔴", "#d0342c")}
 
 st.set_page_config(page_title="Soğutma Arıza Tahmini", page_icon="❄️", layout="wide")
@@ -39,7 +41,7 @@ if not (ROOT / "models/predictor.joblib").exists():
     import train
 
     with st.spinner("İlk çalıştırma: sentetik veri üretiliyor ve model eğitiliyor (~30 sn)..."):
-        train.main()
+        train.main(out_root=ROOT)
 
 raw, hourly, units, metrics, model = load()
 unit_by_id = {u["unit_id"]: u for u in units}
