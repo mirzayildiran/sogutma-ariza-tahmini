@@ -12,3 +12,6 @@ models/
 .claude/
 .DS_Store
 .streamlit/secrets.toml
+
+# Bildirim ayarları (gerçek ayar dosyası repoya girmesin)
+bildirim_ayarlari.json

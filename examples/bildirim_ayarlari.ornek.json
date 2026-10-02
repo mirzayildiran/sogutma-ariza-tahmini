@@ -1,0 +1,28 @@
+{
+  "_aciklama": "Örnek bildirim ayarı. Kopyalayıp düzenleyin (bildirim_ayarlari.json). Parola, token ve sır BURAYA YAZILMAZ; ortam değişkenleriyle verilir (docs/bildirimler.md).",
+  "deneme_modu": true,
+  "bildirilen_durumlar": ["İzlemede", "Kritik"],
+  "iyilesme_bildir": true,
+  "cooldown_saat": 12,
+  "surekli_saat": {"İzlemede": 6, "Kritik": 3},
+  "iyilesme_saat": 6,
+  "min_guven": 0.5,
+  "hatirlatma": false,
+  "en_eski_olay_saat": 48,
+  "sessiz_saatler": {"aktif": false, "baslangic": "22:00", "bitis": "07:00", "kritik_haric": true},
+  "birim_adlari": {"U1": "Soğuk Oda A1"},
+  "kanallar": {
+    "konsol": {"aktif": true},
+    "eposta": {
+      "aktif": false,
+      "sunucu": "smtp.example.com",
+      "port": 587,
+      "guvenlik": "starttls",
+      "kullanici": "uyari@example.com",
+      "gonderen": "Soğutma İzleme <uyari@example.com>",
+      "alicilar": ["bakim@example.com"]
+    },
+    "telegram": {"aktif": false, "sohbet_idleri": ["-1001234567890"]},
+    "webhook": {"aktif": false, "url": "https://example.com/hooks/sogutma"}
+  }
+}
