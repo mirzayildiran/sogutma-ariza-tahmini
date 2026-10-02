@@ -13,7 +13,7 @@ import pandas as pd
 
 from .faults import FAULTS
 from .features import FEATURES, hourly_features
-from .ingest import IngestReport, load_csv
+from .ingest import IngestReport, load_csv, load_dataframe
 
 
 class YetersizVeri(ValueError):
@@ -42,16 +42,25 @@ class Analiz:
         return self.H[["timestamp", "unit_id"]].join(self.pred.round(3))
 
 
-def analiz_et(source, model, *, gauge: bool = False, setpoint: Optional[float] = None,
-              tip: Optional[str] = None) -> Analiz:
-    """`source`: dosya yolu ya da dosya benzeri nesne. Basınç/set değeri/tip seçenekleri load_csv'ye gider."""
-    raw = load_csv(source, gauge=gauge, setpoint=setpoint, tip=tip)
+def _analiz(raw: pd.DataFrame, model) -> Analiz:
     H = hourly_features(raw)
     if H.empty:
         raise YetersizVeri("Öznitelik üretilemedi: veri çok kısa ya da çok boşluklu (en az ~1 gün gerekir).")
     pred = model.predict(H)
     belirsiz = [f for f in FEATURES if H[f].isna().all()]
     return Analiz(raw=raw, H=H, pred=pred, rapor=raw.attrs["rapor"], belirsiz=belirsiz)
+
+
+def analiz_et(source, model, *, gauge: bool = False, setpoint: Optional[float] = None,
+              tip: Optional[str] = None) -> Analiz:
+    """`source`: dosya yolu ya da dosya benzeri nesne. Basınç/set değeri/tip seçenekleri load_csv'ye gider."""
+    return _analiz(load_csv(source, gauge=gauge, setpoint=setpoint, tip=tip), model)
+
+
+def analiz_et_tablo(df: pd.DataFrame, model, *, gauge: bool = False, setpoint: Optional[float] = None,
+                    tip: Optional[str] = None) -> Analiz:
+    """`analiz_et` ile aynı, ama metin sütunlu hazır tablodan (ör. API'nin JSON ölçümlerinden)."""
+    return _analiz(load_dataframe(df, gauge=gauge, setpoint=setpoint, tip=tip), model)
 
 
 def son_durum(pred: pd.DataFrame, H: pd.DataFrame, model) -> dict:
