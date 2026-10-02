@@ -16,8 +16,8 @@ ayrı bir dalda geliştirilir, incelenip test edildikten sonra `main` dalına bi
 - [x] Panel: maliyet ve kazanç (ROI) hesaplayıcı
 
 ## Dalga 3: Entegrasyon
-- [ ] REST API (FastAPI) ile tahmin servisi
-- [ ] Docker imajı ve docker-compose
+- [x] REST API (FastAPI) ile tahmin servisi
+- [x] Docker imajı ve docker-compose
 - [ ] MQTT ile canlı veri alma örneği (simülatörden yayın + abone)
 
 ## Dalga 4: Model kalitesi
