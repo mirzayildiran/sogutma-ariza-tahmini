@@ -4,7 +4,7 @@
 
 **Soğuk odalardaki arızaları, ürün bozulmadan günler önce tahmin eden kestirimci bakım sistemi.**
 
-[![CI](https://github.com/ml4yer/sogutma-ariza-tahmini/actions/workflows/ci.yml/badge.svg)](https://github.com/ml4yer/sogutma-ariza-tahmini/actions/workflows/ci.yml)
+[![CI](https://github.com/mirzayildiran/sogutma-ariza-tahmini/actions/workflows/ci.yml/badge.svg)](https://github.com/mirzayildiran/sogutma-ariza-tahmini/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikitlearn&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Panel-FF4B4B?logo=streamlit&logoColor=white)
