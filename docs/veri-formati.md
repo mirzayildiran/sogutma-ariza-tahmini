@@ -7,6 +7,7 @@ olmadan komut satırından, kendi sensör kayıtlarınızla tahmin alabilirsiniz
 python train.py                      # bir kez: modeli eğitir (models/predictor.joblib)
 python predict.py veri.csv           # tahmin + Türkçe özet + saatlik rapor CSV'si
 python predict.py veri.csv --setpoint 2.0 --gauge -o rapor.csv
+python predict.py dondurucu.csv --tip dondurucu --setpoint -20   # ekipman tipi: dondurucu
 ```
 
 Denemek için hazır bir örnek var: `python predict.py examples/ornek_veri.csv`
@@ -14,9 +15,12 @@ Denemek için hazır bir örnek var: `python predict.py examples/ornek_veri.csv`
 Yeniden üretmek için: `python examples/ornek_veri_uret.py`).
 
 > [!IMPORTANT]
-> Model **R404A** soğutucu akışkan ve simülatör verisiyle eğitildi. Başka bir gaz, farklı
-> ünite tipi (dondurucu, market dolabı, chiller) ya da gerçek saha gürültüsü için sonuçlar
+> Model **R404A** soğutucu akışkan ve simülatör verisiyle eğitildi. Başka bir gaz, simülatörde
+> bulunmayan bir ünite tipi (chiller vb.) ya da gerçek saha gürültüsü için sonuçlar
 > **doğrulanmamıştır**; çıktıyı karar vermek için değil, ön gösterge olarak kullanın.
+> Simülatör üç ekipman tipini bilir: `soguk_oda` (varsayılan), `dondurucu`, `market_dolabi`.
+> Tipi `--tip` ya da `tip` sütunu ile **doğru** verin; yanlış tip (ör. dondurucuyu soğuk oda sanmak)
+> normal çalışmayı arıza gibi gösterir.
 
 ## 1. Sütunlar
 
@@ -41,6 +45,7 @@ Tanınmayan sütunlar yok sayılır.
 |---|---|---|
 | `unit_id` | metin | Tek ünite varsayılır (`U1`). Birden çok ünite aynı dosyada olabilir (`Ünite`, `Oda No`, `Cihaz`). |
 | `setpoint` | °C | `--setpoint` değeri, o da yoksa oda sıcaklığı medyanı kullanılır. |
+| `tip` | metin | Ekipman tipi: `soguk_oda`, `dondurucu`, `market_dolabi` (ayrıca `Dondurucu`, `freezer`, `vitrin` gibi yazılışlar). Ünite başına tek değer; yoksa `--tip` değeri, o da yoksa `soguk_oda`. Oda sıcaklığı −10 °C altındaysa ve tip verilmediyse uyarı çıkar. |
 | `comp_on` | 0/1 | `i_comp > 0,5 A` eşiğinden türetilir. |
 | `defrost` | 0/1 | Hep 0 varsayılır; defrost sırasındaki batarya sıcaklığı sinyali kullanılamaz. |
 | `door_open` | 0/1 | Modelde kullanılmaz. |
@@ -139,7 +144,7 @@ Python'dan kullanım:
 from sogutma.ingest import load_csv
 from sogutma.features import hourly_features
 
-raw = load_csv("veri.csv", gauge=False, setpoint=2.0)
+raw = load_csv("veri.csv", gauge=False, setpoint=2.0, tip="soguk_oda")
 print(raw.attrs["rapor"].ozet())     # uyarılar, türetilen alanlar, eksik sensörler
 H = hourly_features(raw)
 ```

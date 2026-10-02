@@ -10,6 +10,7 @@ import plotly.express as px
 import streamlit as st
 from plotly.subplots import make_subplots
 
+from .model import MODEL_VERSION
 from .simulator import START
 
 STATUS_STYLE = {"Normal": ("🟢", "#2e9e5b"), "İzlemede": ("🟠", "#e08a1e"), "Kritik": ("🔴", "#d0342c")}
@@ -30,10 +31,17 @@ def ensure_trained():
     """İlk çalıştırmada (ör. Streamlit Cloud) veri ve model yoksa üretir."""
     r = root()
     if not (r / "models/predictor.joblib").exists():
-        import train
+        mesaj = "İlk çalıştırma: sentetik veri üretiliyor ve model eğitiliyor (~30 sn)..."
+    elif (load_metrics(str(r)) or {}).get("model_version") != MODEL_VERSION:
+        mesaj = "Kayıtlı model eski bir sürüme ait; yeniden eğitiliyor (~30 sn)..."
+    else:
+        return
+    import train
 
-        with st.spinner("İlk çalıştırma: sentetik veri üretiliyor ve model eğitiliyor (~30 sn)..."):
-            train.main(out_root=r)
+    with st.spinner(mesaj):
+        train.main(out_root=r)
+    st.cache_resource.clear()
+    st.cache_data.clear()
 
 
 @st.cache_resource
