@@ -97,6 +97,22 @@ python predict.py veri.csv --bildirim bildirim_ayarlari.json --gonder  # gerçek
 
 Ayrıntılar: [Bildirimler](docs/bildirimler.md).
 
+## 🔌 API ve Docker
+
+Aynı analiz akışı bir **REST API** olarak da sunulur (FastAPI): bir IoT ağ geçidi CSV ya da JSON ölçümlerini
+gönderip ünite başına sağlık skoru, olası arıza ve kalan süreyi alabilir.
+
+```bash
+pip install -r requirements-api.txt && python train.py
+uvicorn api:app --port 8000                                  # belgeler: http://localhost:8000/docs
+curl -F dosya=@examples/ornek_veri.csv http://localhost:8000/tahmin/csv
+
+docker compose up --build        # panel: http://localhost:8501, API: http://localhost:8000
+```
+
+Uç noktalar, kimlik doğrulama (`SOGUTMA_API_ANAHTARI`), hata kodları ve ağ geçidi örneği: [REST API ve Docker](docs/api.md).
+Docker imajı oluşturulurken model eğitilir; imaj kendi kendine yeterlidir.
+
 ## 🏗️ Mimari
 
 ```mermaid
@@ -235,13 +251,17 @@ ruff check .    # kod stili denetimi
 │   └── bildirim.py         # Bildirim Ayarları (kurallar, kanallar, deneme modu önizleme)
 ├── train.py                # Veri üretimi, eğitim, değerlendirme
 ├── predict.py              # Kendi CSV verinle toplu tahmin
+├── api.py                  # REST API giriş noktası (uvicorn api:app); kod: sogutma/api.py
+├── Dockerfile              # Tek imaj: API + panel
+├── docker-compose.yml      # api (8000) ve panel (8501) servisleri
 ├── sogutma/
 │   ├── simulator.py        # Fizik esaslı simülatör: soğuk oda, dondurucu, market dolabı
 │   ├── features.py         # Öznitelik çıkarımı
 │   ├── model.py            # Anomali + sınıflandırma + kalan süre
 │   ├── ingest.py           # CSV okuma, doğrulama, 5 dk hizalama
 │   ├── bildirim.py         # Uyarı kuralları ve bildirim kanalları
-│   ├── analiz.py           # CSV → tahmin akışı (predict.py ve panel ortak kullanır)
+│   ├── analiz.py           # CSV → tahmin akışı (predict.py, panel ve API ortak kullanır)
+│   ├── api.py              # FastAPI uygulaması (tahmin servisi)
 │   ├── roi.py              # Maliyet / kazanç hesabı (saf fonksiyonlar)
 │   ├── ui.py               # Panel ortak yardımcıları (yükleme, biçimlendirme, grafikler)
 │   └── faults.py           # Arıza türleri, belirtiler, bakım önerileri
