@@ -12,15 +12,18 @@ from sogutma.features import FEATURE_LABELS
 from sogutma.ingest import SCHEMA, ValidationError
 from sogutma.ui import STATUS_STYLE, fmt_eta, load_model, root, saglik_grafigi, sinyal_grafigi, sinyal_notu
 
+TIP_SECENEKLERI = {None: "CSV'deki tip sütunu / soğuk oda", "soguk_oda": "Soğuk oda",
+                   "dondurucu": "Dondurucu", "market_dolabi": "Market dolabı"}
 ORNEK = Path(__file__).resolve().parent.parent / "examples" / "ornek_veri.csv"
 DOKUMAN = "https://github.com/mirzayildiran/sogutma-ariza-tahmini/blob/main/docs/veri-formati.md"
 
 
 @st.cache_data(show_spinner="Veri analiz ediliyor...", max_entries=4)
-def calistir(veri: bytes, gauge: bool, setpoint, root_dir: str):
+def calistir(veri: bytes, gauge: bool, setpoint, tip, root_dir: str):
     """(analiz, hatalar) döndürür; hatalar Türkçe mesaj listesidir. Sonuç önbelleğe alınır."""
     try:
-        return analiz_et(io.BytesIO(veri), load_model(root_dir), gauge=gauge, setpoint=setpoint), None
+        sonuc = analiz_et(io.BytesIO(veri), load_model(root_dir), gauge=gauge, setpoint=setpoint, tip=tip)
+        return sonuc, None
     except ValidationError as e:
         return None, e.hatalar
     except YetersizVeri as e:
@@ -29,9 +32,10 @@ def calistir(veri: bytes, gauge: bool, setpoint, root_dir: str):
 
 st.title("📥 Kendi Verini Analiz Et")
 st.warning(
-    "**Sınırlama:** Model **R404A** soğutucu akışkan ve **sentetik (simülatör) veriyle** eğitildi. "
-    "Başka gaz, farklı ünite tipi (dondurucu, market dolabı, chiller) ya da gerçek saha gürültüsü için "
-    "sonuçlar **doğrulanmamıştır**; çıktıyı karar vermek için değil, **ön gösterge** olarak kullanın.")
+    "**Sınırlama:** Model **R404A** soğutucu akışkan ve soğuk oda, dondurucu ve market dolabı için "
+    "**sentetik (simülatör) veriyle** eğitildi. Başka gaz, farklı ekipman (ör. chiller) ya da gerçek saha "
+    "gürültüsü için sonuçlar **doğrulanmamıştır**; çıktıyı karar vermek için değil, **ön gösterge** "
+    "olarak kullanın. Ekipman tipinin doğru seçilmesi önemlidir.")
 
 # ---------------------------------------------------------------- Girdi
 sol, sag = st.columns([3, 2])
@@ -49,6 +53,10 @@ with sag:
                               help="CSV'de set değeri sütunu varsa o kullanılır; sütun yoksa bu değer, "
                                    "o da yoksa oda sıcaklığı medyanı kullanılır.")
         setpoint = st.number_input("Termostat set değeri (°C)", value=2.0, step=0.5, disabled=not set_gir)
+        tip_secim = st.selectbox(
+            "Ekipman tipi", list(TIP_SECENEKLERI), format_func=TIP_SECENEKLERI.get,
+            help="CSV'de `tip` sütunu varsa o kullanılır. Yanlış tip (ör. dondurucuyu soğuk oda olarak "
+                 "vermek) sağlıklı üniteyi arızalı gösterebilir.")
         gauge = st.checkbox("Basınçlar efektif (gauge) ölçülmüş",
                             help="İşaretlerseniz basınçlara 1,013 bar eklenerek mutlak basınca çevrilir. "
                                  "Model mutlak basınç (bar) bekler.")
@@ -75,7 +83,7 @@ else:
              "Açıklama": s["aciklama"]} for k, s in SCHEMA.items()]), hide_index=True, width="stretch")
     st.stop()
 
-analiz, hatalar = calistir(veri, gauge, setpoint if set_gir else None, str(root()))
+analiz, hatalar = calistir(veri, gauge, setpoint if set_gir else None, tip_secim, str(root()))
 if hatalar:
     st.error("**Veri dosyası kullanılamıyor.** Aşağıdaki sorunları giderip yeniden deneyin:\n\n"
              + "\n".join(f"- {h}" for h in hatalar))

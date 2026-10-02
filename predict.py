@@ -1,6 +1,6 @@
 """Kendi sensör CSV dosyanız için arıza tahmini (panel gerekmez).
 
-Kullanım:  python predict.py veri.csv [--setpoint 2.0] [--gauge] [-o rapor.csv]
+Kullanım:  python predict.py veri.csv [--setpoint 2.0] [--tip dondurucu] [--gauge] [-o rapor.csv]
            [--bildirim ayarlar.json [--gonder]]   (bildirimler: docs/bildirimler.md)
 Veri biçimi: docs/veri-formati.md
 """
@@ -16,6 +16,7 @@ from sogutma.analiz import YetersizVeri, analiz_et, son_durum
 from sogutma.bildirim import AyarHatasi, Gonderici, ayar_yukle, isle
 from sogutma.faults import fault_name
 from sogutma.ingest import ValidationError
+from sogutma.model import MODEL_VERSION
 
 ROOT = Path(__file__).parent
 MODEL_PATH = ROOT / "models" / "predictor.joblib"
@@ -66,6 +67,13 @@ def main(argv=None):
         metavar="C",
         help="Termostat set değeri (°C). CSV'de set sütunu yoksa kullanılır; "
         "verilmezse oda sıcaklığı medyanı kullanılır.",
+    )
+    ap.add_argument(
+        "--tip",
+        default=None,
+        metavar="TIP",
+        help="Ekipman tipi: soguk_oda, dondurucu veya market_dolabi. CSV'de tip sütunu yoksa "
+        "kullanılır; verilmezse soguk_oda varsayılır.",
     )
     ap.add_argument(
         "--gauge",
@@ -119,8 +127,10 @@ def main(argv=None):
     if not model_path.exists():
         sys.exit(f"Model bulunamadı ({model_path}).\nÖnce modeli eğitin:  python train.py")
     model = joblib.load(model_path)
+    if getattr(model, "version", 1) != MODEL_VERSION:
+        sys.exit(f"Model dosyası eski bir sürüme ait ({model_path}).\nYeniden eğitin:  python train.py")
     try:
-        analiz = analiz_et(args.csv, model, gauge=args.gauge, setpoint=args.setpoint)
+        analiz = analiz_et(args.csv, model, gauge=args.gauge, setpoint=args.setpoint, tip=args.tip)
     except ValidationError as e:
         sys.exit(f"Veri dosyası kullanılamıyor:\n{e}\n\nBiçim için: docs/veri-formati.md")
     except YetersizVeri as e:

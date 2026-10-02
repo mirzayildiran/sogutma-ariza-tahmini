@@ -42,9 +42,10 @@ class Analiz:
         return self.H[["timestamp", "unit_id"]].join(self.pred.round(3))
 
 
-def analiz_et(source, model, *, gauge: bool = False, setpoint: Optional[float] = None) -> Analiz:
-    """`source`: dosya yolu ya da dosya benzeri nesne. Basınç/set değeri seçenekleri load_csv'ye gider."""
-    raw = load_csv(source, gauge=gauge, setpoint=setpoint)
+def analiz_et(source, model, *, gauge: bool = False, setpoint: Optional[float] = None,
+              tip: Optional[str] = None) -> Analiz:
+    """`source`: dosya yolu ya da dosya benzeri nesne. Basınç/set değeri/tip seçenekleri load_csv'ye gider."""
+    raw = load_csv(source, gauge=gauge, setpoint=setpoint, tip=tip)
     H = hourly_features(raw)
     if H.empty:
         raise YetersizVeri("Öznitelik üretilemedi: veri çok kısa ya da çok boşluklu (en az ~1 gün gerekir).")

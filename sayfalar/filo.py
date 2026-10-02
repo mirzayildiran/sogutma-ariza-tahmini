@@ -218,7 +218,8 @@ with tab_about:
     st.markdown("""
 ### Nasıl çalışır?
 
-**1. Veri toplama** — Her soğuk odadan 5 dakikada bir: emme/basma basıncı, oda, dış ortam,
+**1. Veri toplama** — Her üniteden (soğuk oda, dondurucu, market dolabı) 5 dakikada bir:
+emme/basma basıncı, oda, dış ortam,
 evaporatör bataryası ve basma hattı sıcaklıkları, kompresör ve fan akımı, titreşim,
 kompresör/defrost/kapı durumu. *(Bu demoda veriler fizik esaslı bir simülatörle üretilmektedir.)*
 
