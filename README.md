@@ -49,7 +49,7 @@ bildiren bir sistemin çalışan prototipidir.**
 ## 🚀 Hızlı Başlangıç
 
 ```bash
-git clone https://github.com/ml4yer/sogutma-ariza-tahmini.git
+git clone https://github.com/mirzayildiran/sogutma-ariza-tahmini.git
 cd sogutma-ariza-tahmini
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
