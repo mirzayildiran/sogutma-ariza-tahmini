@@ -9,6 +9,7 @@ Yapay zekâ destekli soğutma arıza tahmini projesinin belgeleri. Ana sayfa iç
 | [Proje Dokümanı](proje-dokumani.md) | Ar-Ge destek başvurusu için taslak: problem, hedefler, yöntem, iş paketleri ve zaman çizelgesi, riskler, ticarileşme, bütçe kalemleri, ekip | Yönetim, başvuru hazırlığı |
 | [Saha Mimarisi](saha-mimarisi.md) | Demo'dan gerçek sahaya geçiş: sensörler, örnekleme, ağ geçidi, MQTT, depolama, model sunumu ve yeniden eğitim, uyarı akışı, güvenlik | Saha/IoT ve yazılım ekibi |
 | Veri formatı (yakında) | Gerçek sahadan CSV ile veri alımı için biçim tanımı (`veri-formati.md`) | Saha/IoT ve veri ekibi |
+| [REST API ve Docker](api.md) | Tahmin servisi: uç noktalar (CSV / JSON), örnek curl istekleri, API anahtarı, hata kodları, uvicorn ve docker compose ile çalıştırma, ağ geçidinden saatlik veri gönderme örneği | Yazılım ve saha/IoT ekibi |
 | [Bildirimler](bildirimler.md) | E-posta / Telegram / webhook uyarıları: kurallar (süreklilik, cooldown, sessiz saat), ayar başvurusu, ortam değişkenleri, cron örneği, güvenlik | Saha/IoT ve bakım ekibi |
 
 ## Önemli not

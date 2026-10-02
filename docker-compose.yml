@@ -1,0 +1,55 @@
+# Çalıştırma:  docker compose up --build
+#   Panel: http://localhost:8501      API: http://localhost:8000/docs
+# API anahtarı (isteğe bağlı):  SOGUTMA_API_ANAHTARI=gizli docker compose up
+# Portlar varsayılan olarak yalnızca bu makineye (127.0.0.1) açılır; ağa açmak için
+# "127.0.0.1:" önekini kaldırın ve mutlaka bir API anahtarı belirleyin.
+# Ayrıntılar: docs/api.md
+
+x-ortak: &ortak
+  build: .
+  image: sogutma-ariza-tahmini
+  restart: unless-stopped
+  # İsimli birimler ilk kullanımda imajdaki eğitilmiş model/demo verisiyle dolar ve iki servis arasında
+  # paylaşılır. Panel modeli yeniden eğitirse API yeniden başlatılmadan yeni modeli kullanır.
+  # Sıfırlamak için: docker compose down -v
+  volumes:
+    - veri:/app/data
+    - modeller:/app/models
+
+services:
+  api:
+    <<: *ortak
+    environment:
+      SOGUTMA_API_ANAHTARI: ${SOGUTMA_API_ANAHTARI:-}
+    command: ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/saglik', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  panel:
+    <<: *ortak
+    command:
+      - streamlit
+      - run
+      - app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+      - --browser.gatherUsageStats=false
+    ports:
+      - "127.0.0.1:8501:8501"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  veri:
+  modeller:
