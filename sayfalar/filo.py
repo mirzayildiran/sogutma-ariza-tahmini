@@ -200,9 +200,9 @@ with tab_perf:
         fig.update_layout(height=450, title="Karışıklık matrisi (saatlik)", coloraxis_showscale=False)
         st.plotly_chart(fig)
     with right:
-        rows = [{"Arıza": fault_name(f), "Kesinlik": round(v["precision"], 3),
+        rows = [{"Arıza": short_name(f), "Kesinlik": round(v["precision"], 3),
                  "Duyarlılık": round(v["recall"], 3), "F1": round(v["f1-score"], 3),
-                 "Örnek (saat)": int(v["support"])} for f, v in metrics["per_class"].items()]
+                 "Saat": int(v["support"])} for f, v in metrics["per_class"].items()]
         st.markdown("**Sınıf bazında sonuçlar**")
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
         ew = pd.DataFrame([e for e in metrics["early_warning"]
