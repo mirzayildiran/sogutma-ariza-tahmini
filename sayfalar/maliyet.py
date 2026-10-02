@@ -14,7 +14,8 @@ ORNEK = "örnek değer — kendi rakamlarınızı girin"
 
 metrics = load_metrics(str(root()))
 sentetik_oran = metrics.get("detection_rate") if metrics else None
-varsayilan_oran = int(round(sentetik_oran * 100)) if sentetik_oran is not None else 50
+# Sentetik sonuç (%100'e yakın) sahayı temsil etmez; temkinli bir başlangıç değeri kullanılır
+VARSAYILAN_ORAN = 50
 
 st.title("💰 Maliyet ve Kazanç Hesaplayıcı")
 st.warning(
@@ -43,14 +44,14 @@ with sol:
             step=1000, help=f"Bozulan ürün, iade, satış kaybı ({ORNEK}).")
     with st.container(border=True):
         st.markdown("**Erken uyarının etkisi**")
-        oran = st.slider("Erken yakalanan arıza oranı (%)", 0, 100, varsayilan_oran, key="roi_oran",
+        oran = st.slider("Erken yakalanan arıza oranı (%)", 0, 100, VARSAYILAN_ORAN, key="roi_oran",
                          help="Arızaların kaçı, ürün zarar görmeden ya da acil servis gerekmeden önce "
                               "uyarıyla yakalanır?")
         if sentetik_oran is not None:
             st.caption(
-                f"Başlangıç değeri, sentetik test filosunda ölçülen yakalama oranıdır "
-                f"(%{sentetik_oran * 100:.0f}). **Gerçek sahada bu oran daha düşük olacaktır**; gerçek değer "
-                "ancak pilot çalışmayla ölçülebilir. Temkinli bir senaryo için değeri düşürün.")
+                f"Başlangıç değeri temkinli bir örnektir (%{VARSAYILAN_ORAN}). Sentetik test filosunda "
+                f"ölçülen oran %{sentetik_oran * 100:.0f} idi, ancak **gerçek sahada bu oran daha düşük "
+                "olacaktır**; gerçek değer ancak pilot çalışmayla ölçülebilir.")
         else:
             st.caption(f"Başlangıç değeri: {ORNEK}. Gerçek değer ancak pilot çalışmayla ölçülebilir.")
         onarim_tas = st.slider(
