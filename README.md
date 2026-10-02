@@ -36,6 +36,8 @@ bildiren bir sistemin çalışan prototipidir.**
 - 🧠 **Açıklanabilir tahmin**: Modelin hangi sinyale dikkat ettiğini ve normalden ne kadar saptığını gösterir
 - 🛠️ **Bakım önerisi**: Her arıza için belirtiler ve yapılması gerekenler
 - ▶️ **Canlı oynatma**: 30 günlük senaryoyu hızlandırarak izleme
+- 📥 **Kendi verini analiz et**: Panelden sensör CSV'si yükle (ya da örnek veriyi kullan), ünite başına sağlık, olası arıza ve kalan süreyi gör, saatlik raporu indir
+- 💰 **Maliyet ve kazanç (ROI) hesaplayıcı**: Kendi rakamlarınla yıllık önlenen maliyet, net fayda, geri ödeme süresi ve duyarlılık analizi
 - 🧪 **Fizik esaslı simülatör**: Gerçek veri olmadan model geliştirme ve test
 
 ## 📸 Ekran Görüntüleri
@@ -44,6 +46,10 @@ bildiren bir sistemin çalışan prototipidir.**
 <tr>
 <td width="50%"><b>Ünite detayı</b>: Kompresör aşınmasında titreşim ve akım yavaşça yükselir, model 15 gün önceden uyarır<br><img src="docs/images/unite_detay.png" alt="Ünite detayı"></td>
 <td width="50%"><b>Uyarılar</b>: Servis ekibine gidecek bildirimler<br><img src="docs/images/uyarilar.png" alt="Uyarılar"><br><br><b>Model performansı</b>: Hiç görülmemiş 40 ünite üzerinde test<br><img src="docs/images/performans.png" alt="Model performansı"></td>
+</tr>
+<tr>
+<td width="50%"><b>Kendi verini analiz et</b>: CSV yükle, veri kontrol raporunu, ünite durumunu ve sensör grafiklerini gör (örnek CSV üzerinde)<br><img src="docs/images/veri_analizi.png" alt="Kendi verini analiz et sayfası"></td>
+<td width="50%"><b>Maliyet ve kazanç</b>: Kendi rakamlarını gir; görünen başlangıç değerleri yalnızca örnek yer tutucudur<br><img src="docs/images/maliyet.png" alt="Maliyet ve kazanç hesaplayıcı"></td>
 </tr>
 </table>
 
@@ -64,7 +70,8 @@ streamlit run app.py
 
 ## 📥 Kendi Verinle Tahmin
 
-Panel olmadan, kendi sensör kayıtlarını (CSV) doğrudan analiz edebilirsin:
+Panelde **📥 Kendi Verini Analiz Et** sayfasından CSV yükleyebilir (ya da *Örnek veriyi kullan* düğmesine
+basabilirsin). Panel olmadan, komut satırından da analiz edebilirsin:
 
 ```bash
 python predict.py examples/ornek_veri.csv -o rapor.csv
@@ -199,7 +206,11 @@ ruff check .    # kod stili denetimi
 ## 📁 Proje Yapısı
 
 ```
-├── app.py                  # Streamlit izleme paneli
+├── app.py                  # Streamlit paneli (giriş noktası, sayfa gezinmesi)
+├── sayfalar/               # Panel sayfaları
+│   ├── filo.py             # Filo İzleme (demo filosu)
+│   ├── analiz.py           # Kendi Verini Analiz Et (CSV yükleme)
+│   └── maliyet.py          # Maliyet ve Kazanç (ROI) hesaplayıcı
 ├── train.py                # Veri üretimi, eğitim, değerlendirme
 ├── predict.py              # Kendi CSV verinle toplu tahmin
 ├── sogutma/
@@ -208,6 +219,9 @@ ruff check .    # kod stili denetimi
 │   ├── model.py            # Anomali + sınıflandırma + kalan süre
 │   ├── ingest.py           # CSV okuma, doğrulama, 5 dk hizalama
 │   ├── bildirim.py         # Uyarı kuralları ve bildirim kanalları
+│   ├── analiz.py           # CSV → tahmin akışı (predict.py ve panel ortak kullanır)
+│   ├── roi.py              # Maliyet / kazanç hesabı (saf fonksiyonlar)
+│   ├── ui.py               # Panel ortak yardımcıları (yükleme, biçimlendirme, grafikler)
 │   └── faults.py           # Arıza türleri, belirtiler, bakım önerileri
 ├── examples/               # Örnek CSV ve üretim betiği
 ├── tests/                  # pytest testleri
@@ -219,6 +233,8 @@ ruff check .    # kod stili denetimi
 - [x] Fizik esaslı simülatör ve 5 arıza senaryosu
 - [x] Anomali tespiti, arıza sınıflandırma, kalan süre tahmini
 - [x] İzleme paneli, uyarılar, açıklanabilir tahminler
+- [x] Panel: CSV yükleyip kendi verisini analiz etme sayfası
+- [x] Panel: maliyet ve kazanç (ROI) hesaplayıcı
 - [ ] Dondurucu (−18 °C), market dolabı ve chiller tipleri
 - [ ] Pilot sahada sensör / IoT ağ geçidi kurulumu (MQTT, Modbus)
 - [ ] Gerçek veri ve servis kayıtlarıyla modelin ince ayarı
