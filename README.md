@@ -4,6 +4,7 @@
 
 **Soğuk odalardaki arızaları, ürün bozulmadan günler önce tahmin eden kestirimci bakım sistemi.**
 
+[![CI](https://github.com/ml4yer/sogutma-ariza-tahmini/actions/workflows/ci.yml/badge.svg)](https://github.com/ml4yer/sogutma-ariza-tahmini/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikitlearn&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Panel-FF4B4B?logo=streamlit&logoColor=white)
@@ -154,6 +155,14 @@ Model 120 sanal ünitede eğitildi, **hiç görmediği 40 ünitede** test edildi
 > Bu değerler **sentetik veri** üzerinde ölçülmüştür. Gerçek sahada sensör gürültüsü, arızalı sensörler,
 > aynı anda birden fazla arıza ve simülatörde modellenmeyen durumlar nedeniyle performans daha düşük
 > olacaktır. Gerçek değerler ancak pilot çalışmayla ölçülebilir.
+
+## 🧪 Testler
+
+```bash
+pip install -r requirements-dev.txt
+pytest          # simülatör, öznitelik, model ve panel testleri (~10 sn, küçük bir filoyla eğitir)
+ruff check .    # kod stili denetimi
+```
 
 ## 📁 Proje Yapısı
 
