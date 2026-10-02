@@ -81,6 +81,16 @@ Türkçe Excel çıktıları (`;` ayraç, virgüllü ondalık, Türkçe sütun a
 sensörlerde program çalışmaya devam eder. Sütunlar, birimler ve sınırlamalar için:
 [Veri formatı](docs/veri-formati.md).
 
+Saatlik çalışan bir cron işiyle birlikte **bildirim** de gönderebilir (e-posta, Telegram, webhook).
+Varsayılan deneme modudur; `--gonder` verilmeden hiçbir mesaj gönderilmez:
+
+```bash
+python predict.py veri.csv --bildirim bildirim_ayarlari.json           # deneme modu
+python predict.py veri.csv --bildirim bildirim_ayarlari.json --gonder  # gerçek gönderim
+```
+
+Ayrıntılar: [Bildirimler](docs/bildirimler.md).
+
 ## 🏗️ Mimari
 
 ```mermaid
@@ -182,6 +192,7 @@ Model 120 sanal ünitede eğitildi, **hiç görmediği 40 ünitede** test edildi
 | [Model kartı](docs/model-karti.md) | Modelin amacı, verisi, metrikleri, sınırlamaları ve pilotta doğrulanması gerekenler |
 | [Proje başvuru taslağı](docs/proje-dokumani.md) | Ar-Ge destek başvurusu için taslak: hedefler, iş paketleri, riskler, ticarileşme |
 | [Veri formatı](docs/veri-formati.md) | Kendi CSV verini hazırlama: sütunlar, birimler, eksik sensörler |
+| [Bildirimler](docs/bildirimler.md) | Uyarı kuralları, kanallar (e-posta / Telegram / webhook), ortam değişkenleri |
 | [Saha mimarisi](docs/saha-mimarisi.md) | Gerçek sahaya geçiş: sensörler, IoT ağ geçidi, MQTT, veritabanı, güvenlik |
 
 ## 🧪 Testler
@@ -207,6 +218,7 @@ ruff check .    # kod stili denetimi
 │   ├── features.py         # Öznitelik çıkarımı
 │   ├── model.py            # Anomali + sınıflandırma + kalan süre
 │   ├── ingest.py           # CSV okuma, doğrulama, 5 dk hizalama
+│   ├── bildirim.py         # Uyarı kuralları ve bildirim kanalları
 │   ├── analiz.py           # CSV → tahmin akışı (predict.py ve panel ortak kullanır)
 │   ├── roi.py              # Maliyet / kazanç hesabı (saf fonksiyonlar)
 │   ├── ui.py               # Panel ortak yardımcıları (yükleme, biçimlendirme, grafikler)
