@@ -6,7 +6,7 @@ ayrı bir dalda geliştirilir, incelenip test edildikten sonra `main` dalına bi
 ## Dalga 1: Temel altyapı
 - [x] Test paketi (pytest) ve GitHub Actions CI
 - [ ] Gerçek veri yükleme (`sogutma/ingest.py`), toplu tahmin aracı (`predict.py`), örnek CSV, veri formatı dokümanı
-- [ ] Dokümantasyon: model kartı, proje başvuru taslağı, saha mimarisi
+- [x] Dokümantasyon: model kartı, proje başvuru taslağı, saha mimarisi
 
 ## Dalga 2: Gerçekçilik ve panel
 - [ ] Simülatör: dondurucu (−18 °C) ve market dolabı tipleri

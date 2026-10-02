@@ -156,6 +156,14 @@ Model 120 sanal ünitede eğitildi, **hiç görmediği 40 ünitede** test edildi
 > aynı anda birden fazla arıza ve simülatörde modellenmeyen durumlar nedeniyle performans daha düşük
 > olacaktır. Gerçek değerler ancak pilot çalışmayla ölçülebilir.
 
+## 📚 Dokümantasyon
+
+| Doküman | İçerik |
+|---|---|
+| [Model kartı](docs/model-karti.md) | Modelin amacı, verisi, metrikleri, sınırlamaları ve pilotta doğrulanması gerekenler |
+| [Proje başvuru taslağı](docs/proje-dokumani.md) | Ar-Ge destek başvurusu için taslak: hedefler, iş paketleri, riskler, ticarileşme |
+| [Saha mimarisi](docs/saha-mimarisi.md) | Gerçek sahaya geçiş: sensörler, IoT ağ geçidi, MQTT, veritabanı, güvenlik |
+
 ## 🧪 Testler
 
 ```bash
