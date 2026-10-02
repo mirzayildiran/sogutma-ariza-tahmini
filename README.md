@@ -62,6 +62,18 @@ streamlit run app.py
 
 > 💡 Paylaşılabilir bağlantı: `http://localhost:8501/?t=470` paneli 20. günden başlatır.
 
+## 📥 Kendi Verinle Tahmin
+
+Panel olmadan, kendi sensör kayıtlarını (CSV) doğrudan analiz edebilirsin:
+
+```bash
+python predict.py examples/ornek_veri.csv -o rapor.csv
+```
+
+Türkçe Excel çıktıları (`;` ayraç, virgüllü ondalık, Türkçe sütun adları) desteklenir; eksik isteğe bağlı
+sensörlerde program çalışmaya devam eder. Sütunlar, birimler ve sınırlamalar için:
+[Veri formatı](docs/veri-formati.md).
+
 ## 🏗️ Mimari
 
 ```mermaid
@@ -162,6 +174,7 @@ Model 120 sanal ünitede eğitildi, **hiç görmediği 40 ünitede** test edildi
 |---|---|
 | [Model kartı](docs/model-karti.md) | Modelin amacı, verisi, metrikleri, sınırlamaları ve pilotta doğrulanması gerekenler |
 | [Proje başvuru taslağı](docs/proje-dokumani.md) | Ar-Ge destek başvurusu için taslak: hedefler, iş paketleri, riskler, ticarileşme |
+| [Veri formatı](docs/veri-formati.md) | Kendi CSV verini hazırlama: sütunlar, birimler, eksik sensörler |
 | [Saha mimarisi](docs/saha-mimarisi.md) | Gerçek sahaya geçiş: sensörler, IoT ağ geçidi, MQTT, veritabanı, güvenlik |
 
 ## 🧪 Testler
@@ -177,12 +190,16 @@ ruff check .    # kod stili denetimi
 ```
 ├── app.py                  # Streamlit izleme paneli
 ├── train.py                # Veri üretimi, eğitim, değerlendirme
+├── predict.py              # Kendi CSV verinle toplu tahmin
 ├── sogutma/
 │   ├── simulator.py        # Fizik esaslı soğuk oda simülatörü
 │   ├── features.py         # Öznitelik çıkarımı
 │   ├── model.py            # Anomali + sınıflandırma + kalan süre
+│   ├── ingest.py           # CSV okuma, doğrulama, 5 dk hizalama
 │   └── faults.py           # Arıza türleri, belirtiler, bakım önerileri
-└── docs/images/            # Ekran görüntüleri
+├── examples/               # Örnek CSV ve üretim betiği
+├── tests/                  # pytest testleri
+└── docs/                   # Dokümantasyon ve ekran görüntüleri
 ```
 
 ## 🗺️ Yol Haritası
