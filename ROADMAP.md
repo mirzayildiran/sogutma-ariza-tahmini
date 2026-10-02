@@ -9,7 +9,7 @@ ayrı bir dalda geliştirilir, incelenip test edildikten sonra `main` dalına bi
 - [x] Dokümantasyon: model kartı, proje başvuru taslağı, saha mimarisi
 
 ## Dalga 2: Gerçekçilik ve panel
-- [ ] Simülatör: dondurucu (−18 °C) ve market dolabı tipleri
+- [x] Simülatör: dondurucu (−18 °C) ve market dolabı tipleri
 - [ ] Simülatör: sensör arızaları (kayma, takılma, veri kaybı) ve modelin bunlara dayanıklılığı
 - [x] Panel: CSV yükleyip kendi verisini analiz etme sayfası
 - [ ] Panel: bildirim kuralları (e-posta / Telegram / webhook, deneme modu)
