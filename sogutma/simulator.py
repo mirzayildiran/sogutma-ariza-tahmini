@@ -91,7 +91,7 @@ def simulate_unit(unit: Unit, days: int, seed: int) -> pd.DataFrame:
         sev = unit.severity(t_h)
         L = sev if unit.fault == "gaz_kacagi" else 0.0
         F = sev if unit.fault == "kondenser_kirlenmesi" else 0.0
-        I = sev if unit.fault == "evaporator_buzlanma" else 0.0
+        I = sev if unit.fault == "evaporator_buzlanma" else 0.0  # noqa: E741
         W = sev if unit.fault == "kompresor_asinmasi" else 0.0
         N = sev ** 1.5 if unit.fault == "fan_arizasi" else 0.0
 
