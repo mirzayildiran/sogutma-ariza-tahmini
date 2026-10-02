@@ -1,6 +1,7 @@
 # Kendi Verinizi Kullanma: Veri Biçimi
 
-Panel olmadan, kendi sensör kayıtlarınızla tahmin almak için:
+Panelde **Kendi Verini Analiz Et** sayfasından CSV yükleyerek (`streamlit run app.py`) ya da panel
+olmadan komut satırından, kendi sensör kayıtlarınızla tahmin alabilirsiniz:
 
 ```bash
 python train.py                      # bir kez: modeli eğitir (models/predictor.joblib)
