@@ -172,6 +172,7 @@ with tab_alerts:
         st.caption("Gerçek sistemde bu olaylar SMS / WhatsApp / e-posta ile servis ekibine iletilir.")
     else:
         st.info("Bu zamana kadar uyarı oluşmadı. Kenar çubuğundan zamanı ileri alın.")
+    st.page_link("sayfalar/bildirim.py", label="Bildirim kurallarını ayarla ve önizle", icon="🔔")
 
 # ---------------------------------------------------------------- Performans
 with tab_perf:
