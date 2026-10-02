@@ -4,7 +4,7 @@ Projenin geliştirme planı ve ilerleme durumu. Tamamlanan maddeler işaretlenir
 ayrı bir dalda geliştirilir, incelenip test edildikten sonra `main` dalına birleştirilir.
 
 ## Dalga 1: Temel altyapı
-- [ ] Test paketi (pytest) ve GitHub Actions CI
+- [x] Test paketi (pytest) ve GitHub Actions CI
 - [ ] Gerçek veri yükleme (`sogutma/ingest.py`), toplu tahmin aracı (`predict.py`), örnek CSV, veri formatı dokümanı
 - [ ] Dokümantasyon: model kartı, proje başvuru taslağı, saha mimarisi
 
