@@ -12,7 +12,7 @@ ayrı bir dalda geliştirilir, incelenip test edildikten sonra `main` dalına bi
 - [x] Simülatör: dondurucu (−18 °C) ve market dolabı tipleri
 - [ ] Simülatör: sensör arızaları (kayma, takılma, veri kaybı) ve modelin bunlara dayanıklılığı
 - [x] Panel: CSV yükleyip kendi verisini analiz etme sayfası
-- [ ] Panel: bildirim kuralları (e-posta / Telegram / webhook, deneme modu)
+- [x] Panel: bildirim kuralları (e-posta / Telegram / webhook, deneme modu)
 - [x] Panel: maliyet ve kazanç (ROI) hesaplayıcı
 
 ## Dalga 3: Entegrasyon

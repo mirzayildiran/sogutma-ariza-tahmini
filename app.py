@@ -20,5 +20,6 @@ sayfa = st.navigation([
     st.Page("sayfalar/filo.py", title="Filo İzleme", icon="🏭", default=True),
     st.Page("sayfalar/analiz.py", title="Kendi Verini Analiz Et", icon="📥", url_path="analiz"),
     st.Page("sayfalar/maliyet.py", title="Maliyet ve Kazanç", icon="💰", url_path="maliyet"),
+    st.Page("sayfalar/bildirim.py", title="Bildirim Ayarları", icon="🔔", url_path="bildirim"),
 ])
 sayfa.run()
