@@ -9,8 +9,7 @@
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import (HistGradientBoostingClassifier,
-                              HistGradientBoostingRegressor, IsolationForest)
+from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor, IsolationForest
 from sklearn.preprocessing import StandardScaler
 
 from .faults import FAULT_TYPES
