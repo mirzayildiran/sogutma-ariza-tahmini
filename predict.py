@@ -11,9 +11,9 @@ from pathlib import Path
 import joblib
 import pandas as pd
 
-from sogutma.faults import FAULTS, fault_name
-from sogutma.features import FEATURES, hourly_features
-from sogutma.ingest import ValidationError, load_csv
+from sogutma.analiz import YetersizVeri, analiz_et, son_durum
+from sogutma.faults import fault_name
+from sogutma.ingest import ValidationError
 
 ROOT = Path(__file__).parent
 MODEL_PATH = ROOT / "models" / "predictor.joblib"
@@ -29,34 +29,27 @@ def fmt_eta(h):
 
 def summarize(uid, pred, H, model):
     """Bir ünitenin son durumunu Türkçe özetler."""
-    last = pred.iloc[-1]
-    row = H.loc[last.name]
-    status = last["status"]
+    d = son_durum(pred, H, model)
+    status = d["status"]
     lines = [
-        f"■ Ünite {uid}  ({row['timestamp']:%d.%m.%Y %H:%M} itibarıyla, {len(pred)} saatlik analiz)",
-        f"  Sağlık skoru : {last['health']:.0f} / 100   {EMOJI.get(status, '')} {status}",
+        f"■ Ünite {uid}  ({d['zaman']:%d.%m.%Y %H:%M} itibarıyla, {d['saat_sayisi']} saatlik analiz)",
+        f"  Sağlık skoru : {d['health']:.0f} / 100   {EMOJI.get(status, '')} {status}",
     ]
-    if last["pred_fault"] == "normal":
+    if d["pred_fault"] == "normal":
         lines.append("  Durum        : Belirgin bir arıza belirtisi yok.")
     else:
-        lines.append(
-            f"  Tahmini arıza: {fault_name(last['pred_fault'])} (güven %{last['confidence'] * 100:.0f})"
-        )
-        lines.append(f"  Kalan süre   : {fmt_eta(last['eta_h'])} içinde arızalanabilir (kaba tahmin)")
-        lines.append(f"  Öneri        : {FAULTS[last['pred_fault']]['oneri']}")
-    dev = model.explain(row)
-    if dev:
+        lines.append(f"  Tahmini arıza: {fault_name(d['pred_fault'])} (güven %{d['confidence'] * 100:.0f})")
+        lines.append(f"  Kalan süre   : {fmt_eta(d['eta_h'])} içinde arızalanabilir (kaba tahmin)")
+        lines.append(f"  Öneri        : {d['oneri']}")
+    if d["sapmalar"]:
         lines.append("  Normalden en çok sapan sinyaller:")
-        for ad, deger, normal, z in dev:
+        for ad, deger, normal, z in d["sapmalar"]:
             lines.append(f"    - {ad}: {deger:.2f} (normal ≈ {normal:.2f}, {z:+.1f}σ)")
-    # İlk kalıcı uyarı: son 6 saatin tamamı Normal dışıysa ne zamandan beri
-    alarm = (pred["status"] != "Normal").to_numpy()
-    if alarm[-1]:
-        n = 0
-        while n < len(alarm) and alarm[-1 - n]:
-            n += 1
-        since = H.loc[pred.index[-n], "timestamp"]
-        lines.append(f"  Uyarı süresi : {since:%d.%m.%Y %H:%M} tarihinden beri Normal dışı ({n} saat)")
+    if d["uyari_saat"]:
+        lines.append(
+            f"  Uyarı süresi : {d['uyari_baslangic']:%d.%m.%Y %H:%M} tarihinden beri "
+            f"Normal dışı ({d['uyari_saat']} saat)"
+        )
     return "\n".join(lines)
 
 
@@ -94,33 +87,28 @@ def main(argv=None):
     model_path = Path(args.model)
     if not model_path.exists():
         sys.exit(f"Model bulunamadı ({model_path}).\nÖnce modeli eğitin:  python train.py")
+    model = joblib.load(model_path)
     try:
-        raw = load_csv(args.csv, gauge=args.gauge, setpoint=args.setpoint)
+        analiz = analiz_et(args.csv, model, gauge=args.gauge, setpoint=args.setpoint)
     except ValidationError as e:
         sys.exit(f"Veri dosyası kullanılamıyor:\n{e}\n\nBiçim için: docs/veri-formati.md")
-    rapor = raw.attrs["rapor"]
-
-    model = joblib.load(model_path)
-    H = hourly_features(raw)
-    if H.empty:
-        sys.exit("Öznitelik üretilemedi: veri çok kısa ya da çok boşluklu (en az ~1 gün gerekir).")
-    pred = model.predict(H)
+    except YetersizVeri as e:
+        sys.exit(str(e))
+    raw, rapor = analiz.raw, analiz.rapor
 
     print(f"{Path(args.csv).name}: {len(raw)} örnek (5 dk), {raw['unit_id'].nunique()} ünite")
     if rapor.ozet():
         print(rapor.ozet())
-    belirsiz = [f for f in FEATURES if H[f].isna().all()]
-    if belirsiz:
-        print(f"Not: {len(belirsiz)} öznitelik hiç hesaplanamadı (sensör eksik); nötr kabul edildi.")
+    if analiz.belirsiz:
+        print(f"Not: {len(analiz.belirsiz)} öznitelik hiç hesaplanamadı (sensör eksik); nötr kabul edildi.")
     print()
-    for uid in H["unit_id"].unique():
-        m = (H["unit_id"] == uid).to_numpy()
-        print(summarize(uid, pred[m], H[m], model))
+    for uid in analiz.uniteler:
+        h, p = analiz.unite(uid)
+        print(summarize(uid, p, h, model))
         print()
 
     cikti = Path(args.output) if args.output else Path(args.csv).with_name(Path(args.csv).stem + "_rapor.csv")
-    out = H[["timestamp", "unit_id"]].join(pred.round(3))
-    out.to_csv(cikti, index=False)
+    analiz.rapor_tablosu().to_csv(cikti, index=False)
     print(f"Saatlik rapor yazıldı: {cikti}")
 
 
