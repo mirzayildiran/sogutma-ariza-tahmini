@@ -1,6 +1,7 @@
 """Kendi sensör CSV dosyanız için arıza tahmini (panel gerekmez).
 
 Kullanım:  python predict.py veri.csv [--setpoint 2.0] [--gauge] [-o rapor.csv]
+           [--bildirim ayarlar.json [--gonder]]   (bildirimler: docs/bildirimler.md)
 Veri biçimi: docs/veri-formati.md
 """
 
@@ -12,11 +13,13 @@ import joblib
 import pandas as pd
 
 from sogutma.analiz import YetersizVeri, analiz_et, son_durum
+from sogutma.bildirim import AyarHatasi, Gonderici, ayar_yukle, isle
 from sogutma.faults import fault_name
 from sogutma.ingest import ValidationError
 
 ROOT = Path(__file__).parent
 MODEL_PATH = ROOT / "models" / "predictor.joblib"
+DURUM_PATH = ROOT / "data" / "bildirim_durumu.json"
 EMOJI = {"Normal": "🟢", "İzlemede": "🟠", "Kritik": "🔴"}
 
 
@@ -82,7 +85,35 @@ def main(argv=None):
         metavar="dosya.joblib",
         help="Eğitilmiş model dosyası (varsayılan: models/predictor.joblib)",
     )
+    ap.add_argument(
+        "--bildirim",
+        default=None,
+        metavar="ayarlar.json",
+        help="Bildirim kuralları dosyası (örnek: examples/bildirim_ayarlari.ornek.json). "
+        "Verilmezse bildirim üretilmez.",
+    )
+    ap.add_argument(
+        "--gonder",
+        action="store_true",
+        help="Bildirimleri gerçekten gönderir. Verilmezse deneme modu: mesajlar yazdırılır, "
+        "hiçbir şey gönderilmez.",
+    )
+    ap.add_argument(
+        "--durum",
+        default=str(DURUM_PATH),
+        metavar="dosya.json",
+        help="Bildirim durum dosyası; eski uyarıların tekrar gönderilmesini önler "
+        "(varsayılan: data/bildirim_durumu.json)",
+    )
     args = ap.parse_args(argv)
+    if args.gonder and not args.bildirim:
+        ap.error("--gonder için --bildirim ayarlar.json gerekir.")
+    kurallar = None
+    if args.bildirim:
+        try:
+            kurallar = ayar_yukle(args.bildirim)
+        except AyarHatasi as e:
+            sys.exit(f"Bildirim ayarı kullanılamıyor: {e}")
 
     model_path = Path(args.model)
     if not model_path.exists():
@@ -108,8 +139,14 @@ def main(argv=None):
         print()
 
     cikti = Path(args.output) if args.output else Path(args.csv).with_name(Path(args.csv).stem + "_rapor.csv")
-    analiz.rapor_tablosu().to_csv(cikti, index=False)
+    out = analiz.rapor_tablosu()
+    out.to_csv(cikti, index=False)
     print(f"Saatlik rapor yazıldı: {cikti}")
+
+    if kurallar is not None:
+        print()
+        gonderici = Gonderici(kurallar, deneme=not args.gonder)
+        print(isle(out, kurallar, args.durum, gonderici).ozet())
 
 
 if __name__ == "__main__":
