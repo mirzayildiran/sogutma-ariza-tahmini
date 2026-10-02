@@ -1,6 +1,6 @@
 """Kendi sensör CSV dosyanız için arıza tahmini (panel gerekmez).
 
-Kullanım:  python predict.py veri.csv [--setpoint 2.0] [--gauge] [-o rapor.csv]
+Kullanım:  python predict.py veri.csv [--setpoint 2.0] [--tip dondurucu] [--gauge] [-o rapor.csv]
            [--bildirim ayarlar.json [--gonder]]   (bildirimler: docs/bildirimler.md)
 Veri biçimi: docs/veri-formati.md
 """
@@ -75,6 +75,13 @@ def main(argv=None):
         "verilmezse oda sıcaklığı medyanı kullanılır.",
     )
     ap.add_argument(
+        "--tip",
+        default=None,
+        metavar="TIP",
+        help="Ekipman tipi: soguk_oda, dondurucu veya market_dolabi. CSV'de tip sütunu yoksa "
+        "kullanılır; verilmezse soguk_oda varsayılır.",
+    )
+    ap.add_argument(
         "--gauge",
         action="store_true",
         help="Basınçlar efektif (gauge) ölçülmüş: +1,013 bar ile mutlağa çevrilir.",
@@ -126,7 +133,7 @@ def main(argv=None):
     if not model_path.exists():
         sys.exit(f"Model bulunamadı ({model_path}).\nÖnce modeli eğitin:  python train.py")
     try:
-        raw = load_csv(args.csv, gauge=args.gauge, setpoint=args.setpoint)
+        raw = load_csv(args.csv, gauge=args.gauge, setpoint=args.setpoint, tip=args.tip)
     except ValidationError as e:
         sys.exit(f"Veri dosyası kullanılamıyor:\n{e}\n\nBiçim için: docs/veri-formati.md")
     rapor = raw.attrs["rapor"]

@@ -239,6 +239,57 @@ def test_predict_unchanged_without_nan(model):
     assert np.array_equal(model._impute(H), H[FEATURES].to_numpy())
 
 
+def _freezer(days=3, seed=5, **kw):
+    return simulate_unit(Unit("E1", "e", tip="dondurucu", **kw), days, seed)
+
+
+def test_tip_default_param_and_column():
+    got = load_csv(_csv(_basic(_healthy(2))))
+    assert (got["tip"] == "soguk_oda").all() and "tip" in got.columns
+    assert "tip" in got.attrs["rapor"].turetilen
+    got = load_csv(_csv(_basic(_freezer(2))), tip="Dondurucu")
+    assert (got["tip"] == "dondurucu").all()
+    assert hourly_features(got)["tip_dondurucu"].eq(1).all()
+    df = _basic(_freezer(2))
+    df["Ekipman Tipi"] = "Dondurucu Oda"
+    got = load_csv(_csv(df))
+    assert (got["tip"] == "dondurucu").all() and "tip" not in got.attrs["rapor"].turetilen
+    assert "tip" not in got.attrs["rapor"].eksik_sensorler
+
+
+def test_tip_per_unit_and_errors():
+    a, b = _basic(_healthy(2)), _basic(_freezer(2))
+    a["unit_id"], b["unit_id"] = "A", "B"
+    a["tip"], b["tip"] = "soguk_oda", "freezer"
+    got = load_csv(_csv(pd.concat([a, b])))
+    assert got.groupby("unit_id")["tip"].first().to_dict() == {"A": "soguk_oda", "B": "dondurucu"}
+    with pytest.raises(ValidationError, match="ekipman tipi"):
+        load_csv(_csv(_basic(_healthy(2))), tip="chiller")
+    bad = _basic(_healthy(2))
+    bad["tip"] = "chiller"
+    with pytest.raises(ValidationError, match="tanınmayan"):
+        load_csv(_csv(bad))
+
+
+def test_freezer_data_without_tip_warns():
+    got = load_csv(_csv(_basic(_freezer(2))))
+    assert any("dondurucu" in u for u in got.attrs["rapor"].uyarilar)
+    got = load_csv(_csv(_basic(_freezer(2))), tip="dondurucu")
+    assert not any("tip" in u for u in got.attrs["rapor"].uyarilar)
+
+
+def test_freezer_cli_with_tip(trained_root, tmp_path, capsys):
+    csv = tmp_path / "dondurucu.csv"
+    df = _freezer(4, fault="kompresor_asinmasi", fault_start_h=0, fault_duration_h=60)
+    cols = ["timestamp", "t_amb", "t_room", "p_suc", "p_dis", "i_comp", "vib", "t_dis", "comp_on", "defrost"]
+    out = df[cols]
+    out.to_csv(csv, index=False)
+    model = str(trained_root / "models" / "predictor.joblib")
+    predict.main([str(csv), "--tip", "dondurucu", "-o", str(tmp_path / "r.csv"), "--model", model])
+    text = capsys.readouterr().out
+    assert "Sağlık skoru" in text and "tip parametresi" in text
+
+
 # --- predict.py ---
 
 
