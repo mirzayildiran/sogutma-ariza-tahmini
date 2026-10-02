@@ -247,6 +247,29 @@ SCHEMA = {
             "sp",
         ],
     ),
+    "tip": dict(
+        zorunlu=False,
+        birim="metin",
+        aciklama="Ekipman tipi: soguk_oda, dondurucu ya da market_dolabi (yoksa tip parametresi / soguk_oda)",
+        takma=["ekipman_tipi", "ekipman", "cihaz_tipi", "unite_tipi", "unit_type", "equipment_type"],
+    ),
+}
+# Ekipman tipi değerleri için kabul edilen yazılışlar (_norm ile normalleştirilmiş)
+TIP_ALIASES = {
+    "soguk_oda": "soguk_oda",
+    "soguk_hava_deposu": "soguk_oda",
+    "cold_room": "soguk_oda",
+    "coldroom": "soguk_oda",
+    "dondurucu": "dondurucu",
+    "dondurucu_oda": "dondurucu",
+    "derin_dondurucu": "dondurucu",
+    "freezer": "dondurucu",
+    "market_dolabi": "market_dolabi",
+    "market_dolap": "market_dolabi",
+    "reyon_dolabi": "market_dolabi",
+    "vitrin": "market_dolabi",
+    "display": "market_dolabi",
+    "display_cabinet": "market_dolabi",
 }
 # Yalnızca sh / sc türetmek için okunan, çıktıya girmeyen yardımcı sensörler
 EXTRA_SCHEMA = {
@@ -267,7 +290,7 @@ REQUIRED = [c for c, s in SCHEMA.items() if s["zorunlu"]]
 OPTIONAL = [c for c, s in SCHEMA.items() if not s["zorunlu"]]
 OUT_COLUMNS = list(SCHEMA)
 FLAG_COLS = ["comp_on", "defrost", "door_open"]
-NUM_COLS = [c for c in OUT_COLUMNS if c not in ("timestamp", "unit_id", *FLAG_COLS)]
+NUM_COLS = [c for c in OUT_COLUMNS if c not in ("timestamp", "unit_id", "tip", *FLAG_COLS)]
 # Tarih ve saat ayrı sütunlardaysa (logger dışa aktarımlarında yaygın)
 _DATE_ALIASES, _TIME_ALIASES = ["tarih", "date", "gun"], ["saat", "hour"]
 
@@ -325,6 +348,11 @@ def _alias_map():
 
 
 _ALIASES = _alias_map()
+
+
+def _canon_tip(value):
+    """Ekipman tipi yazılışını kanonik anahtara çevirir; tanınmazsa None."""
+    return TIP_ALIASES.get(_norm(value))
 
 
 def _lookup(col):
@@ -520,11 +548,23 @@ def load_dataframe(
     gauge=False,
     setpoint=None,
     unit_id=None,
+    tip=None,
     comp_threshold=COMP_ON_THRESHOLD_A,
     max_gap_min=MAX_FFILL_MIN,
 ):
-    """Metin sütunlu ham tabloyu doğrular ve simülatör ham biçimine çevirir."""
+    """Metin sütunlu ham tabloyu doğrular ve simülatör ham biçimine çevirir.
+
+    `tip`: CSV'de `tip` sütunu yoksa tüm üniteler için ekipman tipi (soguk_oda, dondurucu,
+    market_dolabi); verilmezse soguk_oda.
+    """
     report, errors = IngestReport(), []
+    default_tip = "soguk_oda"
+    if tip is not None:
+        default_tip = _canon_tip(tip)
+        if default_tip is None:
+            raise ValidationError(
+                f"Bilinmeyen ekipman tipi: '{tip}'. Geçerli değerler: soguk_oda, dondurucu, market_dolabi."
+            )
 
     # 1) Sütun eşleme
     rename, seen, ignored = {}, {}, []
@@ -581,6 +621,25 @@ def load_dataframe(
     else:
         d["unit_id"] = unit_id or "U1"
         report.bilgiler.append(f"unit_id sütunu yok; tek ünite varsayıldı ('{d['unit_id'].iloc[0]}').")
+
+    # 3b) Ekipman tipi: sütun > tip parametresi > soğuk oda; ünite başına tek değer (en sık görülen)
+    if "tip" in d:
+        canon = d["tip"].astype(str).str.strip().map(_canon_tip)
+        unknown = d["tip"][canon.isna() & (d["tip"].astype(str).str.strip() != "")]
+        if len(unknown):
+            raise ValidationError(
+                f"'tip' sütununda tanınmayan ekipman tipi: '{unknown.iloc[0]}'. "
+                "Geçerli değerler: soguk_oda, dondurucu, market_dolabi."
+            )
+        d["tip"] = canon.fillna(default_tip)
+        for uid_, g_ in d.groupby("unit_id"):
+            if g_["tip"].nunique() > 1:
+                report.uyarilar.append(
+                    f"Ünite '{uid_}': birden çok ekipman tipi var; en sık görülen kullanıldı."
+                )
+        d["tip"] = d.groupby("unit_id")["tip"].transform(lambda s: s.mode().iloc[0])
+    else:
+        d["tip"] = default_tip
 
     # 4) Sayısal / mantıksal sütunlar
     for c in NUM_COLS + list(EXTRA_SCHEMA):
@@ -654,6 +713,7 @@ def load_dataframe(
     derive_sh = d["sh"].isna().all() and d["t_suc"].notna().any()
     derive_sc = d["sc"].isna().all() and d["t_liq"].notna().any()
     parts = []
+    unit_tip = d.groupby("unit_id")["tip"].first()
     for uid, g in d.groupby("unit_id", sort=False):
         u = _prepare_unit(
             g,
@@ -667,7 +727,7 @@ def load_dataframe(
             errors=errors,
         )
         if u is not None:
-            parts.append(u.rename_axis("timestamp").reset_index().assign(unit_id=uid))
+            parts.append(u.rename_axis("timestamp").reset_index().assign(unit_id=uid, tip=unit_tip[uid]))
     if not parts:
         raise ValidationError(errors)
     for e in errors:  # kullanılabilir ünite varsa kısa/bozuk üniteler yalnızca uyarıdır
@@ -679,7 +739,7 @@ def load_dataframe(
             f"{report.kopya_satir} yinelenen zaman damgası satırı silindi (sonuncusu tutuldu)."
         )
     report.eksik_sensorler = [
-        c for c in OPTIONAL if c not in FLAG_COLS + ["setpoint", "unit_id"] and out[c].isna().all()
+        c for c in OPTIONAL if c not in FLAG_COLS + ["setpoint", "unit_id", "tip"] and out[c].isna().all()
     ]
     if derive_sh:
         report.turetilen["sh"] = "t_suc ve emme basıncındaki doyma sıcaklığından"
@@ -693,6 +753,19 @@ def load_dataframe(
         report.turetilen["setpoint"] = (
             "--setpoint değeri" if setpoint is not None else "oda sıcaklığı medyanı (set değeri verilmedi)"
         )
+    if "tip" not in seen:
+        report.turetilen["tip"] = (
+            "tip parametresi" if tip is not None else "sütun yok; soğuk oda (soguk_oda) varsayıldı"
+        )
+        if tip is None:
+            cold = [
+                str(u) for u, g in out.groupby("unit_id") if g["t_room"].median() < -10  # dondurucu aralığı
+            ]
+            if cold:
+                report.uyarilar.append(
+                    f"Ünite(ler) {', '.join(cold)}: oda sıcaklığı −10 °C altında ama ekipman tipi verilmedi "
+                    "(soğuk oda varsayıldı). Dondurucu ise tip='dondurucu' (CLI: --tip dondurucu) verin."
+                )
     gercek = [c for c in report.eksik_sensorler if c not in report.turetilen]
     if gercek:
         report.bilgiler.append(

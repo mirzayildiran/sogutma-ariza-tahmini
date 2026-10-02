@@ -72,3 +72,38 @@ def test_fault_shows_up_in_features(hourly):
     early = f[f["severity"] == 0].tail(12)
     late = f[f["severity"] >= 0.9].tail(12)
     assert late["sh"].mean() > early["sh"].mean() + 3  # gaz kaçağında kızgınlık artar
+
+
+def test_tip_flags_and_tip_column():
+    units = [Unit("C", "c"), Unit("D", "d", tip="dondurucu"), Unit("M", "m", tip="market_dolabi")]
+    H = hourly_features(simulate_fleet(units, 3, seed=4))
+    got = H.groupby("unit_id")[["tip", "tip_dondurucu", "tip_market"]].first()
+    assert got.loc["C"].tolist() == ["soguk_oda", 0.0, 0.0]
+    assert got.loc["D"].tolist() == ["dondurucu", 1.0, 0.0]
+    assert got.loc["M"].tolist() == ["market_dolabi", 0.0, 1.0]
+    # Tip bayrakları arıza etiketi değildir: etiket sütunlarından türemez
+    assert "tip_dondurucu" in FEATURES and "tip_market" in FEATURES
+    assert not H[FEATURES].isna().any().any()
+
+
+def test_features_comparable_across_types():
+    """t_room_dev hedefe göre göreli, dolayısıyla tipler arası kıyaslanabilir; mutlak p_suc farklıdır."""
+    units = [Unit("C", "c"), Unit("D", "d", tip="dondurucu")]
+    H = hourly_features(simulate_fleet(units, 4, seed=6))
+    m = H.groupby("unit_id")[["t_room_dev", "p_suc", "t_dis"]].mean()
+    assert m["t_room_dev"].abs().max() < 1.0
+    assert m.loc["C", "p_suc"] > 2 * m.loc["D", "p_suc"] - 0.5
+    assert m.loc["D", "t_dis"] > m.loc["C", "t_dis"] + 8
+
+
+def test_unknown_tip_raises():
+    raw = simulate_fleet([Unit("C", "c")], 2, seed=1)
+    raw["tip"] = "chiller"
+    with pytest.raises(ValueError):
+        hourly_features(raw)
+
+
+def test_missing_tip_column_defaults_to_cold_room():
+    raw = simulate_fleet([Unit("C", "c")], 2, seed=1).drop(columns="tip")
+    H = hourly_features(raw)
+    assert (H["tip"] == "soguk_oda").all() and (H["tip_dondurucu"] == 0).all()
