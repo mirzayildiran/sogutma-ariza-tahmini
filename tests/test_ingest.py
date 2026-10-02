@@ -1,0 +1,268 @@
+import io
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+import predict
+from sogutma.features import FEATURES, hourly_features
+from sogutma.ingest import OUT_COLUMNS, ValidationError, load_csv
+from sogutma.simulator import Unit, simulate_unit
+
+ORNEK = Path(__file__).parent.parent / "examples" / "ornek_veri.csv"
+
+
+def _csv(df, sep=";", decimal=","):
+    return io.StringIO(df.to_csv(sep=sep, decimal=decimal, index=False))
+
+
+def _healthy(days=3, seed=5, **kw):
+    """Sağlıklı simülatör verisi, Türkçe/İngilizce sütun adlarına çevrilmeye hazır."""
+    return simulate_unit(Unit("A1", "a", setpoint=2.0, **kw), days, seed)
+
+
+def _basic(raw):
+    """Yalnızca zorunlu sütunlar (kısa İngilizce adlarla)."""
+    out = raw[["timestamp", "t_amb", "t_room", "p_suc", "p_dis", "i_comp"]].copy()
+    out["timestamp"] = out["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+    return out
+
+
+def test_turkish_excel_example_parses():
+    raw = load_csv(ORNEK)
+    assert list(raw.columns) == OUT_COLUMNS
+    assert len(raw) == 2880 and raw["unit_id"].nunique() == 1
+    assert raw["timestamp"].is_monotonic_increasing
+    assert raw["comp_on"].dtype == bool
+    assert 0.5 < raw["t_room"].mean() < 4
+    assert raw["p_suc"].between(1, 10).all()
+
+
+def test_matches_simulator_values():
+    sim = simulate_unit(Unit("A1", "a", setpoint=2.0), 3, seed=5)
+    got = load_csv(_csv(_basic(sim)))
+    assert len(got) == len(sim)
+    assert np.allclose(got["t_room"], sim["t_room"], atol=1e-6)
+    # comp_on sütunu yok: i_comp eşiğinden türetilir
+    assert (got["comp_on"].to_numpy() == sim["comp_on"].to_numpy()).all()
+    assert "comp_on" in got.attrs["rapor"].turetilen
+    assert not got["defrost"].any()
+
+
+def test_aliases_and_separators():
+    sim = _healthy(2)
+    df = pd.DataFrame(
+        {
+            "Zaman": sim["timestamp"].dt.strftime("%d.%m.%Y %H:%M"),
+            "Dış Ortam (°C)": sim["t_amb"],
+            "Oda Sıcaklığı [°C]": sim["t_room"],
+            "Alçak Basınç": sim["p_suc"],
+            "Yüksek Basınç": sim["p_dis"],
+            "Kompresör Akımı": sim["i_comp"],
+            "Ünite": "Oda-1",
+        }
+    )
+    for sep, dec in [(";", ","), (",", "."), ("\t", ",")]:
+        got = load_csv(_csv(df, sep, dec))
+        assert (got["unit_id"] == "Oda-1").all()
+        assert np.allclose(got["p_suc"], sim["p_suc"], atol=1e-6)
+
+
+def test_cp1254_encoding_and_file_path(tmp_path):
+    sim = _healthy(2)
+    df = _basic(sim).rename(columns={"t_room": "Oda Sıcaklığı", "p_suc": "Emme Basıncı"})
+    path = tmp_path / "veri.csv"
+    path.write_bytes(df.to_csv(sep=";", decimal=",", index=False).encode("cp1254"))
+    got = load_csv(path)
+    assert len(got) == len(sim)
+
+
+def test_separate_date_and_time_columns():
+    sim = _healthy(2)
+    df = _basic(sim).drop(columns="timestamp")
+    df.insert(0, "Tarih", sim["timestamp"].dt.strftime("%d.%m.%Y"))
+    df.insert(1, "Saat", sim["timestamp"].dt.strftime("%H:%M"))
+    got = load_csv(_csv(df))
+    assert got["timestamp"].iloc[0] == sim["timestamp"].iloc[0]
+
+
+def test_gauge_conversion():
+    sim = _healthy(2)
+    df = _basic(sim)
+    df["p_suc"] -= 1.013
+    df["p_dis"] -= 1.013
+    got = load_csv(_csv(df), gauge=True)
+    assert np.allclose(got["p_suc"], sim["p_suc"], atol=1e-6)
+    # Bayrak olmadan, mutlak olarak okunan düşük basınçlar için uyarı verilir
+    df["p_suc"] -= 3
+    assert any("gauge" in u for u in load_csv(_csv(df)).attrs["rapor"].uyarilar)
+
+
+def test_duplicates_gaps_and_resampling():
+    sim = _healthy(3)
+    df = _basic(sim)
+    stamp = df["timestamp"]
+    df = pd.concat([df, df.iloc[100:110]])  # 10 yinelenen satır
+    df = df[~df["timestamp"].isin(stamp.iloc[401:405]) & ~df["timestamp"].isin(stamp.iloc[1001:1100])]
+    df = df.sample(frac=1, random_state=0)  # karışık sıra
+    got = load_csv(_csv(df))
+    rapor = got.attrs["rapor"]
+    assert rapor.kopya_satir == 10
+    assert len(got) == len(sim)  # 5 dk ızgarası korunur
+    assert got["t_room"].iloc[401:405].notna().all()  # kısa boşluk doldurulur
+    assert got["t_room"].iloc[1010:1099].isna().all()  # uzun boşluk NaN kalır
+    H = hourly_features(got)
+    gap_hours = got["timestamp"].iloc[1020:1080].dt.floor("1h").unique()
+    assert not H["timestamp"].isin(gap_hours).any()  # boşluk saatleri raporlanmaz
+
+
+def test_derives_sh_sc_from_auxiliary_temperatures():
+    from sogutma.simulator import sat_temperature
+
+    sim = _healthy(2)
+    df = _basic(sim)
+    df["t_suc"] = sat_temperature(sim["p_suc"]) + 7.0
+    df["t_liq"] = sat_temperature(sim["p_dis"]) - 4.0
+    got = load_csv(_csv(df))
+    run = got["comp_on"]
+    assert np.allclose(got.loc[run, "sh"], 7.0, atol=0.01)
+    assert np.allclose(got.loc[run, "sc"], 4.0, atol=0.01)
+    assert "sh" not in got.attrs["rapor"].eksik_sensorler
+
+
+def test_missing_optional_sensors_reported():
+    got = load_csv(_csv(_basic(_healthy(2))))
+    assert set(got.attrs["rapor"].eksik_sensorler) == {"t_coil", "sh", "sc", "i_fan", "vib", "t_dis"}
+    for c in ("vib", "i_fan", "sh"):
+        assert got[c].isna().all()
+
+
+def test_setpoint_param_and_column():
+    df = _basic(_healthy(2))
+    assert (load_csv(_csv(df), setpoint=3.5)["setpoint"] == 3.5).all()
+    est = load_csv(_csv(df))
+    assert est["setpoint"].nunique() == 1 and abs(est["setpoint"].iloc[0] - 2.0) < 1.5
+    df["set"] = 2.5
+    assert (load_csv(_csv(df), setpoint=9)["setpoint"] == 2.5).all()  # sütun parametreden önceliklidir
+
+
+def test_multiple_units():
+    a = _basic(_healthy(2, seed=1)).assign(unit_id="A")
+    b = _basic(_healthy(2, seed=2)).assign(unit_id="B")
+    got = load_csv(_csv(pd.concat([a, b])))
+    assert set(got["unit_id"]) == {"A", "B"}
+    assert set(hourly_features(got)["unit_id"]) == {"A", "B"}
+
+
+# --- Doğrulama hataları ---
+
+
+def _raises(df, *parts, **kw):
+    with pytest.raises(ValidationError) as e:
+        load_csv(_csv(df), **kw)
+    for p in parts:
+        assert p in str(e.value)
+
+
+def test_missing_required_columns():
+    _raises(_basic(_healthy(2)).drop(columns=["p_dis", "i_comp"]), "Zorunlu", "p_dis", "i_comp")
+
+
+def test_unparseable_timestamps():
+    df = _basic(_healthy(2))
+    df["timestamp"] = "dün akşam"
+    _raises(df, "Zaman damgası okunamadı")
+
+
+def test_too_little_data():
+    _raises(_basic(_healthy(2)).iloc[:200], "en az 24 saat")
+    _raises(_basic(_healthy(2)).iloc[:1], "tek bir ölçüm")
+
+
+def test_too_sparse_sampling():
+    df = _basic(_healthy(10)).iloc[::9]  # 45 dk
+    _raises(df, "örnekleme aralığı")
+
+
+def test_impossible_temperatures():
+    df = _basic(_healthy(2))
+    df["t_room"] = df["t_room"] + 200
+    _raises(df, "t_room", "fiziksel aralığın")
+
+
+def test_few_outliers_become_nan_with_warning():
+    df = _basic(_healthy(2))
+    df.loc[df.index[10], "t_room"] = 999.0
+    got = load_csv(_csv(df))
+    assert any("t_room" in u for u in got.attrs["rapor"].uyarilar)
+
+
+def test_swapped_pressures():
+    df = _basic(_healthy(2)).rename(columns={"p_suc": "p_dis", "p_dis": "p_suc"})
+    _raises(df, "emme basıncı basma basıncından büyük")
+
+
+def test_empty_and_missing_file(tmp_path):
+    with pytest.raises(ValidationError, match="boş"):
+        load_csv(io.StringIO(""))
+    with pytest.raises(ValidationError, match="bulunamadı"):
+        load_csv(tmp_path / "yok.csv")
+
+
+# --- Öznitelik / model entegrasyonu ---
+
+
+def test_features_without_labels_match_simulator_values():
+    sim = simulate_unit(
+        Unit("A1", "a", setpoint=2.0, fault="gaz_kacagi", fault_start_h=24, fault_duration_h=48), 3, seed=9
+    )
+    labelled = hourly_features(sim)
+    unlabelled = hourly_features(sim.drop(columns=["severity", "hours_to_failure", "fault"]))
+    assert "label" not in unlabelled and "severity" not in unlabelled
+    pd.testing.assert_frame_equal(labelled[unlabelled.columns], unlabelled)
+
+
+def test_predict_tolerates_missing_sensors(model):
+    sim = _healthy(4, seed=11)
+    sim[["vib", "i_fan", "sh", "sc", "t_dis", "t_coil"]] = np.nan
+    H = hourly_features(sim)
+    assert H[["vib", "sh"]].isna().all().all()
+    p = model.predict(H)
+    assert not p.drop(columns="eta_h").isna().any().any()
+    assert (p["status"] == "Normal").mean() > 0.9  # eksik sensör yanlış alarm üretmemeli
+
+
+def test_predict_unchanged_without_nan(model):
+    H = hourly_features(_healthy(4, seed=12))
+    assert not H[FEATURES].isna().any().any()
+    assert np.array_equal(model._impute(H), H[FEATURES].to_numpy())
+
+
+# --- predict.py ---
+
+
+def test_cli_end_to_end(trained_root, tmp_path, capsys):
+    out = tmp_path / "rapor.csv"
+    predict.main([str(ORNEK), "-o", str(out), "--model", str(trained_root / "models" / "predictor.joblib")])
+    text = capsys.readouterr().out
+    assert "Sağlık skoru" in text and "Saatlik rapor yazıldı" in text
+    rep = pd.read_csv(out)
+    assert {"timestamp", "unit_id", "health", "status", "pred_fault", "eta_h"} <= set(rep.columns)
+    # Hata erken günlerde yok, sonda gelişiyor
+    assert (rep["status"].iloc[:48] == "Normal").mean() > 0.9
+    assert rep["status"].iloc[-1] != "Normal"
+
+
+def test_cli_without_model_and_bad_data(tmp_path):
+    with pytest.raises(SystemExit) as e:
+        predict.main([str(ORNEK), "--model", str(tmp_path / "yok.joblib")])
+    assert "train.py" in str(e.value)
+
+
+def test_cli_bad_csv(trained_root, tmp_path):
+    bad = tmp_path / "bozuk.csv"
+    bad.write_text("a;b\n1;2\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as e:
+        predict.main([str(bad), "--model", str(trained_root / "models" / "predictor.joblib")])
+    assert "Zorunlu" in str(e.value)
