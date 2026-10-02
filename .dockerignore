@@ -1,0 +1,20 @@
+.git
+.github
+.claude
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.DS_Store
+
+# İmaj derlenirken yeniden üretilir
+data
+models
+
+# Çalışma zamanında gerekmez
+tests
+docs/images
+bildirim_ayarlari.json
+.streamlit/secrets.toml
