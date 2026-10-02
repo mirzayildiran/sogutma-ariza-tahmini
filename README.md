@@ -39,6 +39,7 @@ bildiren bir sistemin çalışan prototipidir.**
 - ▶️ **Canlı oynatma**: 30 günlük senaryoyu hızlandırarak izleme
 - 📥 **Kendi verini analiz et**: Panelden sensör CSV'si yükle (ya da örnek veriyi kullan), ünite başına sağlık, olası arıza ve kalan süreyi gör, saatlik raporu indir
 - 💰 **Maliyet ve kazanç (ROI) hesaplayıcı**: Kendi rakamlarınla yıllık önlenen maliyet, net fayda, geri ödeme süresi ve duyarlılık analizi
+- 🔔 **Bildirim ayarları**: Panelden uyarı kurallarını (süreklilik, bekleme süresi, sessiz saatler) ve kanalları (e-posta, Telegram, webhook) ayarla, JSON olarak indir; demo filosunda mesajları **deneme modunda** önizle (panelden gerçek gönderim yapılmaz, parola/token panelde girilmez)
 - 🧪 **Fizik esaslı simülatör**: Gerçek veri olmadan model geliştirme ve test
 
 ## 📸 Ekran Görüntüleri
@@ -46,11 +47,14 @@ bildiren bir sistemin çalışan prototipidir.**
 <table>
 <tr>
 <td width="50%"><b>Ünite detayı</b>: Kompresör aşınmasında titreşim ve akım yavaşça yükselir, model 15 gün önceden uyarır<br><img src="docs/images/unite_detay.png" alt="Ünite detayı"></td>
-<td width="50%"><b>Uyarılar</b>: Servis ekibine gidecek bildirimler<br><img src="docs/images/uyarilar.png" alt="Uyarılar"><br><br><b>Model performansı</b>: Hiç görülmemiş üniteler üzerinde test<br><img src="docs/images/performans.png" alt="Model performansı"></td>
+<td width="50%"><b>Uyarılar</b>: Servis ekibine gidecek bildirimler<br><img src="docs/images/uyarilar.png" alt="Uyarılar"><br><br><b>Model performansı</b>: Hiç görülmemiş sanal üniteler üzerinde test (sentetik veri)<br><img src="docs/images/performans.png" alt="Model performansı"></td>
 </tr>
 <tr>
 <td width="50%"><b>Kendi verini analiz et</b>: CSV yükle, veri kontrol raporunu, ünite durumunu ve sensör grafiklerini gör (örnek CSV üzerinde)<br><img src="docs/images/veri_analizi.png" alt="Kendi verini analiz et sayfası"></td>
 <td width="50%"><b>Maliyet ve kazanç</b>: Kendi rakamlarını gir; görünen başlangıç değerleri yalnızca örnek yer tutucudur<br><img src="docs/images/maliyet.png" alt="Maliyet ve kazanç hesaplayıcı"></td>
+</tr>
+<tr>
+<td colspan="2"><b>Bildirim ayarları</b>: Kuralları ve kanalları (e-posta / Telegram / webhook) ayarla, JSON olarak indir; demo filosunda hangi mesajların gideceğini deneme modunda önizle (hiçbir şey gönderilmez)<br><img src="docs/images/bildirim.png" alt="Bildirim ayarları sayfası" width="50%"></td>
 </tr>
 </table>
 
@@ -227,7 +231,8 @@ ruff check .    # kod stili denetimi
 ├── sayfalar/               # Panel sayfaları
 │   ├── filo.py             # Filo İzleme (demo filosu)
 │   ├── analiz.py           # Kendi Verini Analiz Et (CSV yükleme)
-│   └── maliyet.py          # Maliyet ve Kazanç (ROI) hesaplayıcı
+│   ├── maliyet.py          # Maliyet ve Kazanç (ROI) hesaplayıcı
+│   └── bildirim.py         # Bildirim Ayarları (kurallar, kanallar, deneme modu önizleme)
 ├── train.py                # Veri üretimi, eğitim, değerlendirme
 ├── predict.py              # Kendi CSV verinle toplu tahmin
 ├── sogutma/
