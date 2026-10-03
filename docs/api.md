@@ -257,6 +257,12 @@ Tasarım kararları:
 
 ## 6. Ağ geçidinden saatlik veri gönderme
 
+Depoda `sogutma/mqtt_contract.py` içinde MQTT v1 `telemetry` mesajı için saf bir validator/normalizer bulunur.
+`normalize_telemetry(topic, payload)` tek bir 300 saniyelik mesajı doğrular ve `/tahmin/olcumler` satırına
+eşler; aynı zamanda REST satırında bulunmayan site/gateway/kalite provenance alanlarını döndürür. Broker
+istemcisi, reconnect/spool, kalıcı depolama ve 24 saatlik pencere biriktirme uygulanmamıştır. Sözleşme ve
+kesin eşlemeler için [Saha mimarisi, MQTT v1](saha-mimarisi.md#6-mqtt-konu-yapısı-ve-veri-biçimi) belgesine bakın.
+
 Ağ geçidi (ya da yerel bir betik) her saat son 3 günün 5 dakikalık ölçümlerini gönderir ve yanıttaki
 uyarıya göre hareket eder. Aşağıdaki örnek yalnızca standart kütüphane kullanır; `son_olcumler()` sizin
 depolama katmanınızdan (SQLite, InfluxDB, ...) kayıtları okuyan, **sizin yazmanız gereken** bir işlevdir.

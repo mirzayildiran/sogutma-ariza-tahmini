@@ -19,7 +19,8 @@ Durum: çalışan demo prototipi. Tamamlandı işaretleri depodaki kod ve testle
 - [x] Temel sentetik testte sınıf Brier/log-loss, koşullu ETA hatası ve ±8 °C sabit ortam kayması stres metriği üret.
 - [ ] ETA belirsizliği ve olasılık kalibrasyonunu ünite bazında ayrılmış doğrulama verisinde değerlendir.
 - [ ] Eşzamanlı ekipman arızası (mevcut sensör + ekipman arızası birlikte test edilir), uzun dönem mevsimsellik ve sıcak hava dalgası senaryolarını değerlendir.
-- [ ] MQTT üretici/abone prototipi ve sürümlü telemetri sözleşmesi ekle; zaman, birim, eksik değer ve yeniden bağlantı davranışını test et.
+- [x] MQTT v1 telemetri sözleşmesi için saf doğrulama/kanonik alan adaptörü ekle; broker, yeniden bağlantı ve kalıcı alım kapsam dışı.
+- [ ] MQTT üretici/abone prototipi; zaman, birim, eksik değer ve yeniden bağlantı davranışını broker ile test et.
 - [ ] Zaman serisi saklama yaklaşımını pilot gereksinimleri, saklama süresi ve işletim maliyetine göre seç.
 
 ## Pilot ve ürünleştirme: saha verisi ve gereksinim bekliyor
