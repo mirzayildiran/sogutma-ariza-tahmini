@@ -260,11 +260,32 @@ Tasarım kararları:
 
 ## 6. Ağ geçidinden saatlik veri gönderme
 
-Depoda `sogutma/mqtt_contract.py` içinde MQTT v1 `telemetry` mesajı için saf bir validator/normalizer bulunur.
-`normalize_telemetry(topic, payload)` tek bir 300 saniyelik mesajı doğrular ve `/tahmin/olcumler` satırına
-eşler; aynı zamanda REST satırında bulunmayan site/gateway/kalite provenance alanlarını döndürür. Broker
-istemcisi, reconnect/spool, kalıcı depolama ve 24 saatlik pencere biriktirme uygulanmamıştır. Sözleşme ve
-kesin eşlemeler için [Saha mimarisi, MQTT v1](saha-mimarisi.md#6-mqtt-konu-yapısı-ve-veri-biçimi) belgesine bakın.
+Depoda `sogutma/mqtt_contract.py` MQTT v1 `telemetry` mesajını doğrular; `sogutma/mqtt_store.py` bu doğrulanmış
+tam zarfı yerel SQLite staging deposuna yazar ve tek site/ünite için zaman penceresi satırlarını okur.
+`normalize_telemetry(topic, payload)` tek bir 300 saniyelik mesajı `/tahmin/olcumler` satırına eşler ve REST'te
+bulunmayan provenance alanlarını korur. Broker istemcisi, reconnect, gateway spool ve üretim depolaması uygulanmamıştır.
+Sözleşme, çakışma ve eksik aralık davranışı için [Saha mimarisi, MQTT v1](saha-mimarisi.md#6-mqtt-konu-yapısı-ve-veri-biçimi)
+belgesine bakın.
+
+Yerel consumer, doğrulama ve staging'i ayrı ayrı şu şekilde kullanabilir (broker callback'i bu prototipe dahil değildir):
+
+```python
+from datetime import datetime, timezone
+from sogutma.mqtt_contract import normalize_telemetry
+from sogutma.mqtt_store import SQLiteTelemetryStore
+
+with SQLiteTelemetryStore("data/telemetry.sqlite3") as store:
+    sample = normalize_telemetry(topic, payload_bytes)
+    store.insert(sample)  # QoS 1 tekrarında "duplicate" döner; aynı anahtardaki farklı içerik hata verir
+    rows = store.api_rows(
+        "S001", "A1",
+        datetime(2026, 10, 2, 9, tzinfo=timezone.utc),
+        datetime(2026, 10, 3, 9, tzinfo=timezone.utc),
+    )
+```
+
+`rows` tek bir site/üniteye aittir; `{"olcumler": rows}` olarak POST edilebilir. API en az 24 saat geçerli veri
+aramaya devam eder. Uzun eksikler sentetik satırla doldurulmaz; API ingest raporu eksikleri değerlendirir.
 
 Ağ geçidi (ya da yerel bir betik) her saat son 3 günün 5 dakikalık ölçümlerini gönderir ve yanıttaki
 uyarıya göre hareket eder. Aşağıdaki örnek yalnızca standart kütüphane kullanır; `son_olcumler()` sizin

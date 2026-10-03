@@ -303,6 +303,7 @@ ruff check .    # kod stili denetimi
 - [x] CLI e-posta / Telegram / webhook bildirimleri; panelde ayar dışa aktarma ve deneme önizlemesi
 - [ ] Chiller tipi
 - [x] MQTT v1 telemetry mesajı doğrulama/kanonik alan normalizer prototipi (broker bağlantısı yok)
+- [x] Yerel SQLite telemetry staging deposu; idempotent tekrar ve site/ünite scope'u (üretim DB'si değil)
 - [ ] MQTT ile canlı veri alma; yeniden bağlanma/tamponlama ve pilot sensör / IoT ağ geçidi (MQTT, Modbus)
 - [ ] Gerçek veri ve servis kayıtlarıyla modelin ince ayarı
 - [x] Sentetik doğrulama: koşullu ETA hatası, reliability binleri ve ünite-bootstrap aralıkları, kalibre edilmemiş Brier/log-loss, ±8 °C sabit ortam kayması
