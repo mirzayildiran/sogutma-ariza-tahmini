@@ -344,3 +344,18 @@ def test_notification_form_state_survives_page_switch(at):
     at.switch_page(BILDIRIM).run()
     assert not at.exception
     assert at.number_input(key="bd_cooldown").value == 30
+
+
+def test_analysis_page_shows_sensor_health(at):
+    from sogutma.simulator import SensorFault
+
+    from .test_veri_kalitesi import _csv, _fleet_for
+
+    raw = _fleet_for((SensorFault("p_suc", "takili", 5 * 24),))
+    at.switch_page(ANALIZ).run()
+    at.session_state["analiz_kaynak"] = ("sensor.csv", _csv(raw).getvalue())
+    at.run()
+    assert not at.exception
+    assert any("Sensör şüphesi: Emme basıncı takılı" in w.value for w in at.warning)
+    assert any(s.value == "Sensör sağlığı · U1" for s in at.subheader)
+    assert any("sentetik" in s.value.lower() for s in at.caption)

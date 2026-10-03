@@ -194,5 +194,6 @@ gecerli = hmac.compare_digest(beklenen, istek_basligi)   # sabit zamanlı karş�
   tür sayısı kadar mesaj gider.
 - Sessiz saatte ertelenen bir uyarı, alarm bu arada geçse bile ertelenmiş haliyle (özgün zamanıyla) gönderilir.
 - Kanal başına ayrı yeniden deneme kuyruğu yoktur: olay en az bir kanaldan gittiyse başarılı sayılır.
-- Zaman damgaları saat dilimsizdir; sessiz saatler verideki yerel saate göre değerlendirilir.
+- Analiz hattındaki saat dilimsiz zaman damgaları UTC'dir; sessiz saatler şu anda UTC saatine göre değerlendirilir.
+  Ünite/site saat dilimi ayarı henüz yoktur; yerel sessiz saat politikası için bu ayar eklenmelidir.
 - Çok sayıda ünite için mesajlar tek tek gönderilir (toplu özet yoktur).

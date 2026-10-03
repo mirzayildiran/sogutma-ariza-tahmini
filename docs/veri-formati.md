@@ -66,7 +66,8 @@ Boole sütunlar `0/1`, `true/false`, `evet/hayır`, `açık/kapalı`, `on/off` o
 - **Ondalık**: `12,5` ve `12.5` ikisi de okunur (Türkçe Excel dışa aktarımı için).
 - **Kodlama**: UTF-8 (BOM'lu olabilir) ya da Windows-1254 (Türkçe) otomatik algılanır.
 - **Zaman damgası**: `05.01.2026 14:35`, `05.01.2026 14:35:20`, `2026-01-05 14:35:00`,
-  `05/01/2026 14:35` biçimleri. Gün/ay sıralı (gg.aa.yyyy) kabul edilir. Saat dilimi bilgisi atılır.
+  `05/01/2026 14:35` biçimleri. Gün/ay sıralı (gg.aa.yyyy) kabul edilir. Saat dilimsiz zamanlar UTC kabul edilir;
+  açık offset içeren zamanlar UTC'ye çevrilir. Yerel saat gönderiyorsanız doğru offset'i ekleyin.
 - **Boş değer**: boş hücre, `-`, `NaN`, `N/A` eksik sayılır. `Err` gibi okunamayan değerler de eksik
   sayılır ve uyarı verilir.
 - Üst bilgi/açıklama satırları olmamalıdır; başlık dosyanın ilk satırıdır.
@@ -91,7 +92,7 @@ kontrol cihazının ekranında gösterilen değerle aynı noktayı kullanmak tut
 | Boşluklar | 30 dakikaya kadar boşluklar son değerle doldurulur. Daha uzun boşluklar eksik kalır; verisi yarıdan azı dolu saatler rapora girmez. |
 | Yinelenen satır | Aynı ünite ve zaman damgası için sonuncusu tutulur. |
 | Sıralama | Satırların sıralı olması gerekmez. |
-| Fiziksel sınırlar | Sıcaklıklar −60…80 °C (basma hattı −60…150), basınç 0,1…45 bar, akım 0…500 A. Küçük bir kısmı dışındaysa değerler eksik sayılır ve uyarı verilir; %10'dan fazlası dışındaysa dosya reddedilir. Kompresör çalışırken emme basıncı basma basıncına eşit/büyükse aynı kural uygulanır. |
+| Fiziksel sınırlar | Sıcaklıklar −60…80 °C (basma hattı −60…150), basınç 0,1…45 bar, akım 0…500 A. `load_dataframe` doğrudan çağrıldığında küçük bir kısmı dışındaysa değerler eksik sayılır; %10'dan fazlası dışındaysa dosya reddedilir. Analiz akışları sensör kalite denetimi için bu okumaları geçici olarak korur; kalite katmanı bunları işaretler ve model girdisinden temizler. |
 | Kompresör | Kayıt süresince kompresör en az birkaç kez çalışmış olmalıdır; model çalışma anındaki değerleri değerlendirir. |
 
 ## 5. Eksik sensörler
@@ -110,6 +111,36 @@ kullanılamaz:
   yokken) sağlıklı üniteler alarm vermedi ve arızalar yine yakalandı; ancak **arıza türü yanlış
   atfedilebilir** (ör. kompresör aşınması "kondenser kirlenmesi" görünebilir). Tür tahminine
   güvenmek için ilgili sensörleri ekleyin: titreşim → kompresör, fan akımı → fan, `sh`/`sc` → gaz kaçağı.
+
+### 5.1 Sensör sağlığı (veri kalitesi) kontrolleri
+
+Yüklenen veri, modele girmeden önce **sensör arızalarına** karşı da taranır (`sogutma/veri_kalitesi.py`); amaç, takılı
+ya da kayan bir sensörün ekipman arızası alarmına yol açmasını önlemektir. Kontroller ünite başına 5 dakikalık veride,
+saat bazında yapılır:
+
+| Kod | Ne yakalar? | Nasıl? |
+|---|---|---|
+| `takili` | Okuma değişmiyor | 2 saat (kompresör sensörlerinde 12 çalışma örneği) boyunca (maks − min) çok küçük |
+| `kopuk` | Sabit, anlamsız değer | Aralık dışı (ör. −50 °C, 0 bar) ya da kompresör çalışırken 0 A / 0 mm/s sabit okuma |
+| `veri_kaybi` | Eksik veri | Saatin yarısından fazlası boş (sh/sc/akım/titreşimde yalnızca kompresör çalışırken beklenir) |
+| `tutarsiz` | Kayma / yanlış kalibrasyon şüphesi | Sensörler arası fiziksel ilişki bozuk: batarya sıcaklığı ↔ emme doyma sıcaklığı ↔ oda (uzun duruşta); basma doyma sıcaklığı ↔ dış ortam ↔ basma hattı (uzun duruşta); dururken akım/titreşim ≈ 0; çalışırken emme ≥ basma basıncı, oda < evaporasyon sıcaklığı ya da yoğuşma < dış ortam |
+| `gurultu` | Aşırı gürültü dönemi | Saatlik medyan sapma, sensörün normal gürültüsünün birkaç katı |
+| `ani_sicrama` | Tek örneklik sıçramalar | Yerel (5 örnek) medyandan büyük sapma; sıçrayan örnekler **silinir** |
+| `aralik_disi` | Tek tük fiziksel olmayan değer | Makul çalışma aralığı dışı örnekler **silinir** |
+
+Takılı, kopuk, veri kaybı, tutarsız ve gürültü kodlu sensörlerin ilgili öznitelikleri (ör. emme basıncı için `p_suc` ve
+`evap_delta`) son 12 saat boyunca modelden çıkarılır ve nötr sayılır (bkz. bölüm 5: eksik sensör). Sonuçta:
+
+- `predict.py` ünite özetinde `Veri kalitesi: Sensör şüphesi: Emme basıncı takılı (…)` satırı çıkar; panel aynı bilgiyi
+  uyarı olarak ve sensör × saat tablosunda gösterir. Ekipman arızası olasılığından **ayrı** bir teşhistir.
+- Saatlik rapora iki sütun eklenir: `sensor_sorunu` (True/False) ve `sensor_notu` (metin).
+- `python predict.py veri.csv --sensor-kontrolu-kapat` ile kontrol kapatılabilir (karşılaştırma için).
+
+Sınırlar: Eşikler sentetik veriye göre elle ayarlıdır; gerçek sahada yeniden kalibre edilmelidir. Başka sensörle ilişkisi olmayan
+sinyallerde (kızgınlık, aşırı soğutma, fan akımı, titreşim) **kayma yakalanamaz**; kayma ilk 1–3 günde fark edilmeyebilir.
+Analiz akışı, aralık dışı okumaları kalite katmanına taşır (ör. kopuk basınç sensöründe 0 bar) ve işaretlenen örnekleri
+temizler; `load_dataframe` doğrudan çağrıldığında varsayılan katı fiziksel sınır doğrulaması sürer. Python'dan:
+`sogutma.veri_kalitesi.degerlendir(raw)` → `KaliteRaporu` (`.saatlik`, `.temiz`, `.sorunlar()`, `.uygula(H)`).
 
 ## 6. Örnek satırlar
 
@@ -136,18 +167,25 @@ Birden çok ünite: her satıra bir `unit_id` sütunu ekleyin; her ünite ayrı 
 
 `predict.py`, ünite başına son durumu yazdırır (sağlık skoru, durum, tahmini arıza türü, kalan süre,
 normalden en çok sapan sinyaller) ve saatlik rapor CSV'si üretir:
-`timestamp, unit_id, anomaly, p_<arıza>…, health, status, pred_fault, confidence, eta_h`.
+`timestamp, unit_id, anomaly, p_<arıza>…, health, status, pred_fault, confidence, eta_h, sensor_sorunu, sensor_notu`.
 
 Python'dan kullanım:
 
 ```python
 from sogutma.ingest import load_csv
-from sogutma.features import hourly_features
+from sogutma.analiz import ham_tahmin
+import joblib
 
 raw = load_csv("veri.csv", gauge=False, setpoint=2.0, tip="soguk_oda")
 print(raw.attrs["rapor"].ozet())     # uyarılar, türetilen alanlar, eksik sensörler
-H = hourly_features(raw)
+model = joblib.load("models/predictor.joblib")
+H, tahmin, kalite, H_temel = ham_tahmin(raw, model)
+print(kalite.ozet())                  # sensör sorunu özeti (sorun yoksa boş metin)
 ```
+
+`H` sensör kalite kuralları uygulanmış model girdisidir; `H_temel` nötrleme öncesi özniteliklerdir. Uygulama kodunda bu
+ortak akışı kullanın; doğrudan `hourly_features(raw)` çağrısı sensör kalite denetimini atlar. `FaultPredictor` importu
+gerekmez; `joblib.load` yalnızca projeye ait güvenilir model dosyasında kullanılmalıdır.
 
 Dosya kullanılamıyorsa `ValidationError` fırlatılır; `.hatalar` Türkçe mesajları içerir.
 
@@ -167,7 +205,8 @@ yolu değildir. Ayrıntı için cihazınızın kullanım kılavuzuna ya da yazı
   reddedilir.
 - Excel'de "CSV (noktalı virgülle ayrılmış)" kaydı doğrudan okunur. Dosyayı Excel'de düzenlediyseniz tarih
   sütununun biçiminin değişmediğinden emin olun.
-- Kayıtta cihazın saat dilimi/yaz saati kaymaları varsa zaman damgaları arasında boşluk ya da tekrar
-  oluşabilir; program tekrarları siler, boşlukları yukarıdaki kurallarla ele alır.
+- Yerel saatten dışa aktarılan kayıtları offset olmadan göndermeyin: saat dilimsiz zaman UTC sayılır. Yaz saati
+  geçişlerindeki tekrarlı/olmayan yerel saatleri açık offset'li ISO 8601 biçimine çevirin; aksi halde doğru an
+  güvenilir biçimde belirlenemez.
 - Titreşim ve fan akımı gibi sinyaller çoğu standart kontrol cihazında bulunmaz; bunlar için ayrı
   sensör/veri kaydedici gerekebilir. Bu sinyaller olmadan da sistem çalışır (bkz. bölüm 5).

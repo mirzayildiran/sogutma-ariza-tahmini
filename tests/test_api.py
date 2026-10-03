@@ -1,5 +1,6 @@
 """REST API testleri: model/veri geçici klasörden okunur (SOGUTMA_ROOT), küçük eğitilmiş model kullanılır."""
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -9,8 +10,9 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from sogutma.api import create_app
+from sogutma.api import VARSAYILAN_YUKLEME_MB, GovdeBoyutuSiniri, create_app, maks_yukleme_bayt
 from sogutma.ingest import load_csv
+from sogutma.simulator import SensorFault, Unit, simulate_unit
 
 ORNEK = Path(__file__).parent.parent / "examples" / "ornek_veri.csv"
 
@@ -69,7 +71,17 @@ def test_model_bilgisi(client):
     assert "dondurucu" in j["ekipman_tipleri"]
     m = j["metrikler"]
     assert 0 <= m["saatlik_dogruluk"] <= 1 and m["test_unite_sayisi"] > 0
+    assert m["multiclass_brier"] >= 0 and m["log_loss"] >= 0 and m["eta_mae_saat"] >= 0
+    assert m["eta_dogru_tur_mae_saat"] >= 0 and m["eta_dogru_tur_p90_mutlak_hata_saat"] >= 0
+    assert set(m["ortam_kaymasi_stresi"]) == {"-8C", "+8C"}
+    assert all(v["ortam_kaymasi_c"] in (-8, 8) for v in m["ortam_kaymasi_stresi"].values())
     assert set(m["tipe_gore"]) <= set(j["ekipman_tipleri"])
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "0", "-1", "gecersiz"])
+def test_gecersiz_istek_boyutu_ayari_varsayilana_doner(monkeypatch, value):
+    monkeypatch.setenv("SOGUTMA_MAKS_YUKLEME_MB", value)
+    assert maks_yukleme_bayt() == int(VARSAYILAN_YUKLEME_MB * 1024 * 1024)
 
 
 def test_csv_tahmin_gaz_kacagi(client):
@@ -93,6 +105,66 @@ def test_csv_saatlik_seri(client):
     j = csv_gonder(client, saatlik="true", setpoint=1.0).json()
     assert len(j["saatlik"]) == j["uniteler"][0]["saat_sayisi"]
     assert {"zaman", "unit_id", "saglik", "durum", "ariza"} <= set(j["saatlik"][0])
+
+
+def test_sensor_quality_is_exposed_for_csv_and_json(client, tmp_path):
+    raw = simulate_unit(
+        Unit("S1", "sensor testi", sensor_faults=(SensorFault("p_suc", "takili", 3 * 24),)),
+        days=14,
+        seed=14,
+    )
+    csv_path = tmp_path / "sensor.csv"
+    raw.to_csv(csv_path, index=False)
+    csv_result = csv_gonder(client, csv_path)
+    assert csv_result.status_code == 200, csv_result.text
+    csv_unit = csv_result.json()["uniteler"][0]
+    assert csv_unit["sensor_sorunu"]
+    assert "Emme basıncı" in csv_unit["sensor_notu"]
+    assert any(x["sensor"] == "p_suc" and x["neden"] == "takili" for x in csv_unit["sensor_sorunlari"])
+
+    records = raw.astype(object).where(pd.notna(raw), None).to_dict("records")
+    for record in records:
+        record["timestamp"] = pd.Timestamp(record["timestamp"]).isoformat()
+        for field in ("comp_on", "defrost", "door_open"):
+            record[field] = bool(record[field])
+        for field, value in record.items():
+            if isinstance(value, (np.floating, np.integer)):
+                record[field] = float(value)
+    json_result = client.post("/tahmin/olcumler", json={"olcumler": records, "saatlik": True})
+    assert json_result.status_code == 200, json_result.text
+    body = json_result.json()
+    json_unit = body["uniteler"][0]
+    assert json_unit["sensor_sorunu"] and json_unit["sensor_notu"] == csv_unit["sensor_notu"]
+    assert json_unit["sensor_sorunlari"] == csv_unit["sensor_sorunlari"]
+    assert any(row["sensor_sorunu"] for row in body["saatlik"])
+
+
+def test_out_of_range_disconnected_pressure_reaches_sensor_quality_through_csv_and_json(client, tmp_path):
+    raw = simulate_unit(
+        Unit("S2", "kopuk basınç", sensor_faults=(SensorFault("p_suc", "kopuk", 3 * 24, 6 * 24),)),
+        days=14,
+        seed=15,
+    )
+    raw["timestamp"] = pd.to_datetime(raw["timestamp"]).dt.tz_localize("UTC").dt.tz_convert("Europe/Istanbul")
+    csv_path = tmp_path / "kopuk.csv"
+    raw.to_csv(csv_path, index=False)
+    csv_result = csv_gonder(client, csv_path)
+    assert csv_result.status_code == 200, csv_result.text
+    csv_unit = csv_result.json()["uniteler"][0]
+    assert any(x["sensor"] == "p_suc" and x["neden"] == "kopuk" for x in csv_unit["sensor_sorunlari"])
+
+    records = raw.astype(object).where(pd.notna(raw), None).to_dict("records")
+    for record in records:
+        record["timestamp"] = pd.Timestamp(record["timestamp"]).isoformat()
+        for field in ("comp_on", "defrost", "door_open"):
+            record[field] = bool(record[field])
+        for field, value in record.items():
+            if isinstance(value, (np.floating, np.integer)):
+                record[field] = float(value)
+    json_result = client.post("/tahmin/olcumler", json={"olcumler": records})
+    assert json_result.status_code == 200, json_result.text
+    json_unit = json_result.json()["uniteler"][0]
+    assert json_unit["sensor_sorunlari"] == csv_unit["sensor_sorunlari"]
 
 
 def test_csv_gecersiz_tip_422(client):
@@ -135,6 +207,31 @@ def test_csv_yukleme_siniri(client, monkeypatch):
     assert r.status_code == 413 and r.json()["hata"] == "cok_buyuk"
 
 
+def test_govde_siniri_content_length_olmayan_istegi_de_sinirlar(monkeypatch):
+    monkeypatch.setenv("SOGUTMA_MAKS_YUKLEME_MB", "0.00001")
+    parcalar = [b"012345678", b"abcdefgh"]
+    yanitlar = []
+
+    async def receive():
+        if parcalar:
+            return {"type": "http.request", "body": parcalar.pop(0), "more_body": bool(parcalar)}
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        yanitlar.append(message)
+
+    async def downstream(scope, receive, send):
+        while (await receive()).get("more_body"):
+            pass
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    scope = {"type": "http", "method": "POST", "path": "/tahmin/olcumler", "headers": []}
+    asyncio.run(GovdeBoyutuSiniri(downstream)(scope, receive, send))
+    assert yanitlar[0]["status"] == 413
+    assert b"cok_buyuk" in yanitlar[1]["body"]
+
+
 def test_olcumler_tahmin(client):
     kayitlar = ornek_olcumler()
     r = client.post("/tahmin/olcumler", json={"olcumler": kayitlar, "saatlik": True})
@@ -159,6 +256,25 @@ def test_olcumler_en_az_bir_gun(client):
     r = client.post("/tahmin/olcumler", json={"olcumler": ornek_olcumler(gun=0.4)})
     assert r.status_code == 422
     assert r.json()["hata"] == "veri_gecersiz" and "en az" in r.json()["ayrintilar"][0]
+
+
+def test_olcumler_zaman_dilimli_timestamp_utcye_donusturulur(client):
+    kayitlar = ornek_olcumler()
+    for kayit in kayitlar:
+        kayit["timestamp"] = pd.Timestamp(kayit["timestamp"]).tz_localize("Europe/Istanbul").isoformat()
+    beklenen = (pd.Timestamp(kayitlar[-1]["timestamp"]).tz_convert("UTC").tz_localize(None)
+                .floor("h").isoformat(timespec="seconds"))
+    r = client.post("/tahmin/olcumler", json={"olcumler": kayitlar})
+    assert r.status_code == 200, r.text
+    assert r.json()["uniteler"][0]["zaman"] == beklenen
+
+
+def test_olcumler_naif_ve_zaman_dilimli_timestamp_karistirilamaz(client):
+    kayitlar = ornek_olcumler()
+    kayitlar[-1]["timestamp"] += "+00:00"
+    r = client.post("/tahmin/olcumler", json={"olcumler": kayitlar})
+    assert r.status_code == 422
+    assert "karıştırmayın" in " ".join(r.json()["ayrintilar"])
 
 
 def test_olcumler_alan_hatalari_422(client):

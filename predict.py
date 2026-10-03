@@ -1,7 +1,7 @@
 """Kendi sensör CSV dosyanız için arıza tahmini (panel gerekmez).
 
 Kullanım:  python predict.py veri.csv [--setpoint 2.0] [--tip dondurucu] [--gauge] [-o rapor.csv]
-           [--bildirim ayarlar.json [--gonder]]   (bildirimler: docs/bildirimler.md)
+           [--sensor-kontrolu-kapat] [--bildirim ayarlar.json [--gonder]]   (bildirimler: docs/bildirimler.md)
 Veri biçimi: docs/veri-formati.md
 """
 
@@ -17,6 +17,7 @@ from sogutma.bildirim import AyarHatasi, Gonderici, ayar_yukle, isle
 from sogutma.faults import fault_name
 from sogutma.ingest import ValidationError
 from sogutma.model import MODEL_VERSION
+from sogutma.veri_kalitesi import NEDEN_ADI, NOTRLEYEN, SENSOR_ADI
 
 ROOT = Path(__file__).parent
 MODEL_PATH = ROOT / "models" / "predictor.joblib"
@@ -31,14 +32,22 @@ def fmt_eta(h):
     return f"~{d} gün {hh} saat" if d else f"~{hh} saat"
 
 
-def summarize(uid, pred, H, model):
-    """Bir ünitenin son durumunu Türkçe özetler."""
+def summarize(uid, pred, H, model, sorunlar=None):
+    """Bir ünitenin son durumunu Türkçe özetler. `sorunlar`: ünitenin sensör sağlığı sorunları tablosu."""
     d = son_durum(pred, H, model)
     status = d["status"]
     lines = [
         f"■ Ünite {uid}  ({d['zaman']:%d.%m.%Y %H:%M} itibarıyla, {d['saat_sayisi']} saatlik analiz)",
         f"  Sağlık skoru : {d['health']:.0f} / 100   {EMOJI.get(status, '')} {status}",
     ]
+    if d["sensor_sorunu"]:
+        lines.append(f"  Veri kalitesi: {d['sensor_notu']}")
+        lines.append("  Sensör önerisi: Önce sensörü ve kablolamayı kontrol edin; ilgili öznitelikler "
+                     "arıza değerlendirmesinden çıkarıldı (ekipman arızası olarak yorumlanmadı).")
+    if sorunlar is not None and not sorunlar.empty:
+        bilgi = sorunlar[~sorunlar["neden"].isin(NOTRLEYEN)]
+        for r in bilgi.itertuples():
+            lines.append(f"  Veri notu    : {SENSOR_ADI[r.sensor]} {NEDEN_ADI[r.neden]} ({r.saat} saat)")
     if d["pred_fault"] == "normal":
         lines.append("  Durum        : Belirgin bir arıza belirtisi yok.")
     else:
@@ -88,6 +97,11 @@ def main(argv=None):
         help="Saatlik rapor CSV dosyası (varsayılan: <girdi>_rapor.csv)",
     )
     ap.add_argument(
+        "--sensor-kontrolu-kapat",
+        action="store_true",
+        help="Sensör sağlığı kontrolünü (takılı / kopuk / kayan sensör tespiti) kapatır.",
+    )
+    ap.add_argument(
         "--model",
         default=str(MODEL_PATH),
         metavar="dosya.joblib",
@@ -130,7 +144,8 @@ def main(argv=None):
     if getattr(model, "version", 1) != MODEL_VERSION:
         sys.exit(f"Model dosyası eski bir sürüme ait ({model_path}).\nYeniden eğitin:  python train.py")
     try:
-        analiz = analiz_et(args.csv, model, gauge=args.gauge, setpoint=args.setpoint, tip=args.tip)
+        analiz = analiz_et(args.csv, model, gauge=args.gauge, setpoint=args.setpoint, tip=args.tip,
+                           sensor_kontrolu=not args.sensor_kontrolu_kapat)
     except ValidationError as e:
         sys.exit(f"Veri dosyası kullanılamıyor:\n{e}\n\nBiçim için: docs/veri-formati.md")
     except YetersizVeri as e:
@@ -145,7 +160,7 @@ def main(argv=None):
     print()
     for uid in analiz.uniteler:
         h, p = analiz.unite(uid)
-        print(summarize(uid, p, h, model))
+        print(summarize(uid, p, h, model, analiz.sensor_sorunlari(uid)))
         print()
 
     cikti = Path(args.output) if args.output else Path(args.csv).with_name(Path(args.csv).stem + "_rapor.csv")

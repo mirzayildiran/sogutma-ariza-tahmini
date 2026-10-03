@@ -7,7 +7,7 @@ denenmemiştir. Sensör modelleri, aralıklar ve örnekleme hızları **başlang
 yer verilmemiştir; teklif alınarak belirlenmelidir.
 
 İlgili belgeler: [Model Kartı](model-karti.md) · [Proje Dokümanı](proje-dokumani.md) ·
-Gerçek veri biçimi: [Veri formatı (yakında)](veri-formati.md) ·
+Gerçek veri biçimi: [Veri formatı](veri-formati.md) ·
 Depo: <https://github.com/mirzayildiran/sogutma-ariza-tahmini>
 
 ## İçindekiler
@@ -35,7 +35,7 @@ Depo: <https://github.com/mirzayildiran/sogutma-ariza-tahmini>
 - **Çevrimdışı dayanıklılık:** Ağ geçidi internet kesildiğinde veriyi yerelde tamponlar, bağlantı gelince gönderir.
 - **Dışa doğru bağlantı:** Sahadan buluta yalnızca giden (outbound) bağlantılar; sahada gelen bağlantı portu açılmaz.
 - **Eğitim–sunum tutarlılığı:** Öznitelikler eğitimdeki ile aynı kodla (`sogutma/features.py`) hesaplanmalıdır.
-- **Veri kalitesi önce:** Takılı kalan, aralık dışı veya kopuk sensörler model girdisine ulaşmadan işaretlenmelidir (mevcut model sensör arızalarını bilmez; bkz. [Model Kartı](model-karti.md#8-sınırlılıklar-ve-riskler)).
+- **Veri kalitesi önce:** Mevcut analiz hattı takılı, aralık dışı veya kopuk sensörleri modelden önce sezgisel olarak işaretler; sınıflandırıcıda sensör arızası etiketi yoktur ve kalite eşikleri saha doğrulamasına ihtiyaç duyar (bkz. [Model Kartı](model-karti.md#8-sınırlılıklar-ve-riskler)).
 
 ## 2. Mimari genel bakış
 
@@ -153,6 +153,10 @@ göre belirlenir.
 
 ## 6. MQTT konu yapısı ve veri biçimi
 
+Bu bölüm hedef mimari için **taslak sözleşmedir**; MQTT broker consumer'ı, kalıcı telemetri deposu ve reconnect/spool
+uygulaması depoda henüz yoktur. Mevcut demo API'si stateless çalışır ve her istekte en az 24 saatlik pencere ister.
+MQTT mesajları mevcut REST gövdesiyle aynı şema değildir; bir adapter alan/birim eşlemesi yapmalıdır.
+
 ### Konu yapısı (öneri)
 
 ```
@@ -176,7 +180,7 @@ güncellenmesini kolaylaştırır.
 ```json
 {
   "schema": 1,
-  "ts": "2027-03-14T09:05:00Z",
+"ts": "2027-03-14T09:05:00Z",
   "site_id": "S001",
   "unit_id": "A1",
   "gateway_id": "GW-0001",
@@ -205,6 +209,16 @@ güncellenmesini kolaylaştırır.
 ```
 
 Not: Mesajdaki değerler yalnızca biçimi göstermek için uydurulmuş örneklerdir; gerçek bir ölçümü temsil etmez.
+
+Sözleşme önerisi: `ts` UTC RFC 3339 (`Z` veya açık offset) olmalıdır. MQTT alıcısı UTC'ye normalize eder; site saat dilimi
+yalnızca gösterim/raporlama için kullanılır. `site_id` MQTT topic ve kalıcı depoda tutulmalı; mevcut REST/CSV tahmin
+şemasındaki `unit_id` tek başına tenant kimliği değildir. `p_suc_bar.mean` / `p_dis_bar.mean` gibi özet alanları adapter
+kanonik `p_suc` / `p_dis` değerlerine çevirir; `pressure_ref` zorunlu değerlendirilir. Eksik ölçüm `null` ve kalite koduyla
+taşınır, sıfıra çevrilmez.
+
+QoS 1 tekrar teslim edebilir; ilerideki kalıcı alımda `(site_id, unit_id, ts)` anahtarıyla idempotent yazım ve çakışan
+sequence/payload kuralı gerekir. Uzun kesintide sıfırla doldurma yapılmamalı; gateway tarafında yerel kalıcı spool ve
+exponential backoff tasarlanmalıdır. Bunlar şu an öneridir, uygulanmış/üretimde sınanmış davranış değildir.
 
 ### Örnek `events` mesajı
 
