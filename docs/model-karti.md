@@ -326,9 +326,13 @@ ve `FaultPredictor.classify` (sınıflandırıcının ham kararı) çıktısıyl
 | Makro F1 | 0,9886 |
 | Hatalı sınıflanan saat | 250 / 42 480 |
 
-Sınıflandırıcının verdiği ham sınıf olasılıkları için ek proper-scoring ölçümleri: çok sınıflı Brier skoru **0,0100**, log-loss
-**0,0223** (42 480 saat). Bunlar olasılıkların kalibre edildiğini göstermez; kalibrasyon uygulanmamıştır. “Güven” alanı
-bu nedenle doğruluk olasılığı olarak yorumlanmamalıdır.
+Sınıflandırıcının verdiği ham sınıf olasılıkları için ek proper-scoring ölçümleri: çok sınıflı Brier skoru **0,0100**
+(60 test ünitesinde ünite-kümeli bootstrap %95 GA: **0,0065–0,0138**), log-loss **0,0223** (GA: **0,0132–0,0332**;
+42 480 saat). Saatler ünite içi bağımlıdır; güven aralıkları 60 test ünitesini yeniden örnekler. Testte sınıf-bazlı,
+10 eşit genişlikli one-vs-rest reliability binleri de hesaplandı; makro ECE **0,0013**. Sınıf dengesizliği nedeniyle bu
+tek sayı yanıltıcı olabilir: bazı 0,5–0,9 olasılık aralıklarında yalnızca 1–31 saat / 1–7 ünite bulunurken, 1,0'a
+yuvarlanan binlerde binlerce saat vardır ve kimi seyrek binlerde tahmin-gözlem farkı 0,76'ya ulaşır. Bu betimleyici
+tablo kalibratör değildir; kalibrasyon uygulanmamıştır. “Güven” alanı doğruluk olasılığı olarak yorumlanmamalıdır.
 
 ### Sınıf bazında sonuçlar
 
@@ -378,11 +382,13 @@ Tanım (`train.py`, `early_warning`):
 
 Kalan süre (ETA) hata ölçümleri yalnızca test filosunda modelin arıza dışı sınıf verdiği ve gerçek arızaya kalan sürenin
 pozitif olduğu saatlerden hesaplanmıştır: **6 295 saat / 42 ünite**. Bu koşullu alt kümede ortalama mutlak hata **28,6 saat**,
-medyan mutlak hata **20,5 saat**, %90 mutlak hata dilimi **65,5 saattir**. Sonuçlar sentetiktir; arıza öncesi her saat için
+medyan mutlak hata **20,5 saat**, %90 mutlak hata dilimi **65,5 saattir**. MAE'nin 42 ünite üzerinden kümeli bootstrap %95
+güven aralığı **23,5–33,7 saat**tir. Sonuçlar sentetiktir; arıza öncesi her saat için
 bağımsız tahmin performansı veya sahada sağlanacak ETA doğruluğu iddiası değildir. API bu ölçümlerin MAE ve p90 alanlarını sunar.
 Doğru arıza türü de tahmin edilmiş saatlerle sınırlanınca (**6 216 saat / 42 ünite**) MAE **28,1 saat**, p90 mutlak hata
 **64,5 saattir**. Her iki alt kümede de saatler aynı ünite içinde zamansal olarak ilişkilidir; saat sayısı bağımsız örnek sayısı
-gibi yorumlanmamalıdır. İlk ölçüm doğru tür tahmini koşulu aramaz; ikincisi arar.
+gibi yorumlanmamalıdır. İlk ölçüm doğru tür tahmini koşulu aramaz; ikincisi arar. Bootstrap aralığı test metriklerinin
+üniteler arası değişkenliğini özetler; tek ETA tahmini için prediction interval değildir.
 
 ### Sabit dış ortam kayması stresi
 
@@ -507,7 +513,7 @@ karşılaştırılabilir değildir (farklı test filosu).
 
 | Sınırlılık | Etki / risk |
 |---|---|
-| **Arızaya kalan süre (ETA) belirsizliği** | Tahmin tek bir nokta değeridir; güven aralığı yoktur. Simülatördeki `x^1.6` bozulma eğrisini öğrenmiştir; gerçek bozulma hızları arızadan arızaya ve ekipmandan ekipmana çok değişir. ETA, kesin bir tarih olarak değil, "kabaca aciliyet derecesi" olarak okunmalıdır. Hata miktarı bu çalışmada ölçülmemiştir. |
+| **Arızaya kalan süre (ETA) belirsizliği** | Tahmin tek bir nokta değeridir; tek tahmin için güven/tahmin aralığı yoktur. Koşullu mutlak hata ve ünite-kümeli MAE bootstrap aralığı sentetik testte ölçülmüştür; bu ölçüler gerçek bozulma hızı belirsizliğini veya tek ünite için tahmin aralığını vermez. Simülatördeki `x^1.6` bozulma eğrisini öğrenmiştir; ETA kesin bir tarih değil, kabaca aciliyet göstergesidir. |
 | **ETA ufku** | Eğitimde 14 günle sınırlandırılmıştır; daha uzak arızalar için tahmin güvenilir değildir. |
 | **Sağlık skoru ağırlıkları** | Ağırlıklar ve eşikler elle belirlenmiştir; kalibre edilmiş bir olasılık veya risk ölçüsü değildir. |
 | **Güven değeri** | Sınıflandırıcı olasılıkları kalibre edilmemiştir; "%90 güven", gerçekte %90 doğru anlamına gelmeyebilir. |
