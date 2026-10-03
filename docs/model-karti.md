@@ -421,6 +421,14 @@ yanlış alarm", ekipmanı sağlıklı (ya da arızası henüz başlamamış) ü
 | Kontrol: sensörü sağlam sağlıklı ünitelerde yanlış alarm (47 ünite) | 0 | 0 |
 | Kontrol: sensörü sağlam arızalı ünitelerde yakalama (44 ünite) | 44 / 44 | 44 / 44 |
 
+Tohum duyarlılığı ek kontrolü (`train.py` dışında, aynı sabit model; 30 gün; simülatör tohumları 4, 5, 6; her tohumda
+120 ünite, toplam 360): sağlıklı ekipman + sensör arızalı 99 ünitede yanlış alarm katman olmadan 16, katmanla 3 oldu.
+Sensör arızalı ve arızası 30 günlük pencerede başlayan ekipmanlı 86 ünite içinde yakalama katman olmadan 86/86,
+katmanla 84/86 oldu; katmanlı hatta bu gruptaki arıza öncesi yanlış alarm 0/115 idi. Enjekte edilen 214 sensör
+arızasının 206'sı (96,3%) işaretlendi; tohum başına medyan tespit gecikmesi 2,25–3,01 saat aralığındaydı. Sensörü
+sağlam 146 kontrol ünitesinin hiçbirinde sensör şüphesi çıkmadı. Bu tekrarlar simülatör tohumlarına dayanıklılığı
+ölçer; model yeniden eğitilmedi, eşikler taranmadı ve saha performansını göstermez.
+
 Sensör arızası tespiti (katman): enjekte edilen 132 arızanın **128'i (%97)** ilgili sensörde işaretlendi (medyan gecikme ≈ 3 saat);
 kaçırılan 4 arızanın hepsi kızgınlık / aşırı soğutma sensörlerinde **kayma** (başka sensörle fiziksel ilişkisi olmayan sinyal).
 Türe göre: takılı, kopuk, veri kaybı, ani sıçrama, gürültü 22 / 22'şer; kayma 18 / 22. 20 arızada (%15) ilgili sensörün yanında
