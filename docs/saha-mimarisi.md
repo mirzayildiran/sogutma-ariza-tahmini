@@ -74,9 +74,10 @@ flowchart LR
 
 Mevcut demoda saha katmanının yerini simülatör alır; öznitelik, model ve panel katmanları bu depodaki
 koddur. MQTT tarafında tek bir v1 telemetri mesajını doğrulayan ve REST'in kanonik ölçüm alanlarına
-eşleyen saf bir Python adaptörü vardır (`sogutma/mqtt_contract.py`). Broker bağlantısı/consumer, kalıcı
-tamponlama ve veri tabanı yoktur. Bulut/sunucu tarafındaki kalıcı veri alımı, veri tabanı, uyarı motoru ve
-yeniden eğitim hattı bu belgenin önerisidir ve **henüz uygulanmamıştır**.
+eşleyen saf bir Python adaptörü (`sogutma/mqtt_contract.py`) ve yerel SQLite staging deposu
+(`sogutma/mqtt_store.py`) vardır. Broker bağlantısı/consumer, ağ geçidi spool'u ve üretim zaman-serisi veri tabanı
+yoktur. Bulut/sunucu tarafındaki kalıcı alım, uyarı motoru ve yeniden eğitim hattı bu belgenin önerisidir ve
+**henüz uygulanmamıştır**.
 
 ## 3. Ölçülecek büyüklükler ve sensörler
 
@@ -155,10 +156,11 @@ göre belirlenir.
 
 ## 6. MQTT konu yapısı ve veri biçimi
 
-Bu bölüm hedef mimari için **v1 sözleşmesidir**. `sogutma/mqtt_contract.py`, aşağıda tanımlanan telemetri mesajını
-doğrular ve REST ölçüm satırına dönüştürür; broker consumer'ı, kalıcı telemetri deposu ve reconnect/spool
-uygulaması depoda henüz yoktur. Mevcut demo API'si stateless çalışır ve her istekte ünite başına en az 24 saatlik
-pencere ister; tek mesaj adaptörü tek başına tahmin isteği oluşturmaz.
+Bu bölüm hedef mimari için **v1 sözleşmesidir**. `sogutma/mqtt_contract.py` mesajı doğrulayıp REST ölçüm satırına
+dönüştürür; `sogutma/mqtt_store.py` tam doğrulanmış mesajı yerel SQLite dosyasında site/ünite/zaman anahtarıyla
+saklar ve REST'e verilebilecek pencere satırlarını okur. Bu tek süreçli yerel staging prototipidir; broker consumer,
+reconnect, ağ geçidi spool'u ve üretim telemetri deposu yoktur. Mevcut demo API'si stateless çalışır ve her istekte
+ünite başına en az 24 saatlik pencere ister; tek mesaj adaptörü tek başına tahmin isteği oluşturmaz.
 
 ### Konu yapısı (öneri)
 
@@ -172,6 +174,7 @@ sogutma/v1/{site_id}/{gateway_id}/config     # uzaktan yapılandırma (sunucu �
 - `site_id`: işletme/lokasyon, `unit_id`: soğutma ünitesi, `gateway_id`: ağ geçidi.
 - Her cihaz yalnızca **kendi alt konularına** yayın yapabilmelidir (broker erişim kontrol listeleri ile; bkz. [Güvenlik](#10-güvenlik)).
 - Cihaz bağlantı kesildiğinde "son istek" (Last Will) mesajıyla `status` konusuna `offline` yazılır.
+- Telemetry yayınları QoS 1 ve **retain kapalı** olmalıdır; eski retained örnekler yeniden bağlantı sonrası güncel veri gibi alınmamalıdır.
 - Şema sürümü konu yolunda (`v1`) ve mesaj içinde (`schema`) taşınır.
 
 ### Örnek `telemetry` mesajı
@@ -215,7 +218,9 @@ Not: Mesajdaki değerler yalnızca biçimi göstermek için uydurulmuş örnekle
 
 v1 adaptörünün doğruladığı kurallar: konu yalnızca `sogutma/v1/{site_id}/{unit_id}/telemetry` olabilir ve
 payload'daki `site_id`/`unit_id` konu ile eşleşmelidir; `schema` tam olarak `1`, `interval_s` tam olarak 300
-saniye, payload en fazla 64 KiB, `ts` ise UTC `Z` veya açık offset içeren RFC 3339 zamanıdır. `ts`, 5 dakikalık pencerenin **bitişidir**;
+saniye, payload en fazla 64 KiB, `ts` ise UTC `Z` veya açık offset içeren RFC 3339 zamanıdır ve normalize edildiğinde
+UTC 5 dakika sınırına hizalanmalıdır. `t_amb`, `t_room`, `p_suc_bar`, `p_dis_bar` ve `i_comp_a` alanları bulunmalı;
+sensör okunmadıysa ilgili skaler/ortalama `null` olabilir. `ts`, 5 dakikalık pencerenin **bitişidir**;
 ölçüm özeti `(ts - 300 saniye, ts]` aralığını kapsar. Adapter offset'i UTC'ye çevirir. Basınç ortalamaları
 `pressure_ref` değerine göre bar(a)'ya çevrilir (`gauge` ise +1,013 bar); fan/kompresör ve sıcaklık/basınç
 özetlerinin model girdisine yalnızca ortalaması aktarılır. Süreler (`comp_run_s`, `defrost_s`, `door_open_s`)
@@ -231,9 +236,13 @@ tutulmalı; mevcut REST/CSV tahmin şemasındaki `unit_id` tek başına tenant k
 `p_dis_bar.mean` adapter tarafından kanonik mutlak basınç `p_suc` / `p_dis` değerlerine çevrilir; `pressure_ref`
 zorunludur. Eksik ölçüm `null` ve kalite koduyla taşınır, sıfıra çevrilmez.
 
-QoS 1 tekrar teslim edebilir; ilerideki kalıcı alımda `(site_id, unit_id, ts)` anahtarıyla idempotent yazım ve çakışan
-sequence/payload kuralı gerekir. Uzun kesintide sıfırla doldurma yapılmamalı; gateway tarafında yerel kalıcı spool ve
-exponential backoff tasarlanmalıdır. Bunlar şu an öneridir, uygulanmış/üretimde sınanmış davranış değildir.
+QoS 1 tekrar teslim edebilir. SQLite prototipi `(site_id, unit_id, ts_utc)` anahtarında aynı normalize edilmiş v1
+payload'ı idempotent kabul eder; aynı anahtarda farklı sözleşme içeriğini reddeder ve eski kaydı ezmez. JSON alan
+sırası/boşlukları ile eşdeğer UTC offset gösterimleri tekrar sayılmaz. Geç gelen kayıtlar zaman damgasına göre
+sıralanır. Sorgu penceresi `(başlangıç, bitiş]` biçimindedir; eksik zamanlara sentetik satır eklenmez. REST öncesinde
+her zaman tek site ve tek ünite sorgulanmalıdır; API şemasında `site_id` yoktur. Uzun kesintide gateway tarafı kalıcı
+spool ve exponential backoff hâlâ tasarım/uygulama işidir; MQTT teslim garantisi veya üretimde denenmiş davranış
+iddiası yoktur.
 
 ### Örnek `events` mesajı
 
@@ -242,6 +251,16 @@ exponential backoff tasarlanmalıdır. Bunlar şu an öneridir, uygulanmış/ür
 ```
 
 ## 7. Depolama
+
+**Uygulanmış yerel prototip:** `SQLiteTelemetryStore`, doğrulanmış tam MQTT zarfını yerel SQLite dosyasında saklar;
+şema `PRAGMA user_version=1` ile işaretlenir, tek süreç içinde kilitlenir ve dosya modunda WAL/busy timeout kullanır.
+Bir mesaj eklemek için `normalize_telemetry` çıktısı gerekir. `query_window(site_id, unit_id, start, end)` sadece
+istenen site/üniteyi ve gerçek ölçüm satırlarını `(start, end]` penceresinde (en fazla 366 gün) verir; araları
+doldurmaz. `api_rows` da tek site/ünite satırlarını döndürür; eksik örnek, 24 saat şartı, freshness ve ölçüm
+kalitesi mevcut ingest/API tarafından değerlendirilir.
+Bu depo düşük hacimli yerel prototip içindir: saklama süresi/temizleme, yedekleme, disk dolması, şifreleme, yüksek
+erişilebilirlik ve birden çok süreçli yazma politikası uygulanmamıştır. Ağ dosya sisteminde veya üretim veritabanı
+olarak kullanılmamalıdır.
 
 Zaman serisi veri için **TimescaleDB** (PostgreSQL uzantısı; SQL, ilişkisel meta veri ile birleştirme
 kolaylığı) veya **InfluxDB** kullanılabilir. TimescaleDB ile ilerlenirse servis kayıtları, ünite meta verisi
@@ -255,18 +274,20 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- Ünite meta verisi
 CREATE TABLE units (
-    unit_id      TEXT PRIMARY KEY,
+    unit_id      TEXT NOT NULL,
     site_id      TEXT NOT NULL,
     name         TEXT,
     refrigerant  TEXT NOT NULL,          -- ör. R404A
     setpoint_c   REAL,
-    installed_at TIMESTAMPTZ
+    installed_at TIMESTAMPTZ,
+    PRIMARY KEY (site_id, unit_id)
 );
 
 -- 5 dakikalık ham/özet ölçümler
 CREATE TABLE telemetry (
     ts         TIMESTAMPTZ NOT NULL,
-    unit_id    TEXT NOT NULL REFERENCES units(unit_id),
+    site_id    TEXT NOT NULL,
+    unit_id    TEXT NOT NULL,
     t_amb      REAL,
     t_room     REAL,
     t_coil     REAL,
@@ -282,14 +303,16 @@ CREATE TABLE telemetry (
     defrost    BOOLEAN,
     door_open  BOOLEAN,
     quality    JSONB,
-    PRIMARY KEY (unit_id, ts)
+    PRIMARY KEY (site_id, unit_id, ts),
+    FOREIGN KEY (site_id, unit_id) REFERENCES units(site_id, unit_id)
 );
 SELECT create_hypertable('telemetry', 'ts');
 
 -- Model çıktıları (saatlik)
 CREATE TABLE predictions (
     ts          TIMESTAMPTZ NOT NULL,
-    unit_id     TEXT NOT NULL REFERENCES units(unit_id),
+    site_id     TEXT NOT NULL,
+    unit_id     TEXT NOT NULL,
     model_ver   TEXT NOT NULL,
     health      REAL,
     status      TEXT,                  -- Normal / İzlemede / Kritik
@@ -297,7 +320,8 @@ CREATE TABLE predictions (
     confidence  REAL,
     anomaly     REAL,
     eta_h       REAL,
-    PRIMARY KEY (unit_id, ts, model_ver)
+    PRIMARY KEY (site_id, unit_id, ts, model_ver),
+    FOREIGN KEY (site_id, unit_id) REFERENCES units(site_id, unit_id)
 );
 
 -- Uyarılar
@@ -305,24 +329,28 @@ CREATE TABLE alerts (
     alert_id    BIGSERIAL PRIMARY KEY,
     opened_at   TIMESTAMPTZ NOT NULL,
     closed_at   TIMESTAMPTZ,
-    unit_id     TEXT NOT NULL REFERENCES units(unit_id),
+    site_id     TEXT NOT NULL,
+    unit_id     TEXT NOT NULL,
     severity    TEXT NOT NULL,
     pred_fault  TEXT,
     message     TEXT,
     ack_by      TEXT,
-    ack_at      TIMESTAMPTZ
+    ack_at      TIMESTAMPTZ,
+    FOREIGN KEY (site_id, unit_id) REFERENCES units(site_id, unit_id)
 );
 
 -- Servis kayıtları: etiketleme ve yeniden eğitim için
 CREATE TABLE service_events (
     event_id     BIGSERIAL PRIMARY KEY,
-    unit_id      TEXT NOT NULL REFERENCES units(unit_id),
+    site_id      TEXT NOT NULL,
+    unit_id      TEXT NOT NULL,
     visited_at   TIMESTAMPTZ NOT NULL,
     fault_type   TEXT,             -- teyit edilen arıza (ör. gaz_kacagi)
     onset_est_at TIMESTAMPTZ,      -- tahmini başlangıç
     failure_at   TIMESTAMPTZ,      -- arıza anı (varsa)
     action       TEXT,
-    notes        TEXT
+    notes        TEXT,
+    FOREIGN KEY (site_id, unit_id) REFERENCES units(site_id, unit_id)
 );
 ```
 
