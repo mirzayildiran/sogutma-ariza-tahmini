@@ -73,8 +73,10 @@ flowchart LR
 ```
 
 Mevcut demoda saha katmanının yerini simülatör alır; öznitelik, model ve panel katmanları bu depodaki
-koddur. Bulut/sunucu tarafındaki veri alımı, veri tabanı, uyarı motoru ve yeniden eğitim hattı bu belgenin
-önerisidir ve **henüz uygulanmamıştır**.
+koddur. MQTT tarafında tek bir v1 telemetri mesajını doğrulayan ve REST'in kanonik ölçüm alanlarına
+eşleyen saf bir Python adaptörü vardır (`sogutma/mqtt_contract.py`). Broker bağlantısı/consumer, kalıcı
+tamponlama ve veri tabanı yoktur. Bulut/sunucu tarafındaki kalıcı veri alımı, veri tabanı, uyarı motoru ve
+yeniden eğitim hattı bu belgenin önerisidir ve **henüz uygulanmamıştır**.
 
 ## 3. Ölçülecek büyüklükler ve sensörler
 
@@ -153,9 +155,10 @@ göre belirlenir.
 
 ## 6. MQTT konu yapısı ve veri biçimi
 
-Bu bölüm hedef mimari için **taslak sözleşmedir**; MQTT broker consumer'ı, kalıcı telemetri deposu ve reconnect/spool
-uygulaması depoda henüz yoktur. Mevcut demo API'si stateless çalışır ve her istekte en az 24 saatlik pencere ister.
-MQTT mesajları mevcut REST gövdesiyle aynı şema değildir; bir adapter alan/birim eşlemesi yapmalıdır.
+Bu bölüm hedef mimari için **v1 sözleşmesidir**. `sogutma/mqtt_contract.py`, aşağıda tanımlanan telemetri mesajını
+doğrular ve REST ölçüm satırına dönüştürür; broker consumer'ı, kalıcı telemetri deposu ve reconnect/spool
+uygulaması depoda henüz yoktur. Mevcut demo API'si stateless çalışır ve her istekte ünite başına en az 24 saatlik
+pencere ister; tek mesaj adaptörü tek başına tahmin isteği oluşturmaz.
 
 ### Konu yapısı (öneri)
 
@@ -210,11 +213,23 @@ güncellenmesini kolaylaştırır.
 
 Not: Mesajdaki değerler yalnızca biçimi göstermek için uydurulmuş örneklerdir; gerçek bir ölçümü temsil etmez.
 
-Sözleşme önerisi: `ts` UTC RFC 3339 (`Z` veya açık offset) olmalıdır. MQTT alıcısı UTC'ye normalize eder; site saat dilimi
-yalnızca gösterim/raporlama için kullanılır. `site_id` MQTT topic ve kalıcı depoda tutulmalı; mevcut REST/CSV tahmin
-şemasındaki `unit_id` tek başına tenant kimliği değildir. `p_suc_bar.mean` / `p_dis_bar.mean` gibi özet alanları adapter
-kanonik `p_suc` / `p_dis` değerlerine çevirir; `pressure_ref` zorunlu değerlendirilir. Eksik ölçüm `null` ve kalite koduyla
-taşınır, sıfıra çevrilmez.
+v1 adaptörünün doğruladığı kurallar: konu yalnızca `sogutma/v1/{site_id}/{unit_id}/telemetry` olabilir ve
+payload'daki `site_id`/`unit_id` konu ile eşleşmelidir; `schema` tam olarak `1`, `interval_s` tam olarak 300
+saniye, payload en fazla 64 KiB, `ts` ise UTC `Z` veya açık offset içeren RFC 3339 zamanıdır. `ts`, 5 dakikalık pencerenin **bitişidir**;
+ölçüm özeti `(ts - 300 saniye, ts]` aralığını kapsar. Adapter offset'i UTC'ye çevirir. Basınç ortalamaları
+`pressure_ref` değerine göre bar(a)'ya çevrilir (`gauge` ise +1,013 bar); fan/kompresör ve sıcaklık/basınç
+özetlerinin model girdisine yalnızca ortalaması aktarılır. Süreler (`comp_run_s`, `defrost_s`, `door_open_s`)
+aynı 300 saniyelik pencerenin içindeki saniyelerdir ve pozitifse API bayrağı `true` olur. API'de temsil edilmeyen
+`site_id`, `gateway_id`, `quality`, `refrigerant`, `fw` ve `comp_starts` normalizasyon çıktısında provenance olarak
+korunur; kalite kodları henüz model kararını değiştirmez. Eksik sensör ortalamaları `null` kalır; sıfıra çevrilmez.
+Ünite tipi v1 payload'ında yer almadığından mevcut REST varsayılanı `soguk_oda` kullanılır. Uyumsuz/ek alanlı payload
+reddedilir. Bu eşlemelerin donanımda veya broker üzerinde doğrulaması yapılmamıştır.
+
+Broker consumer'ın ileride kullandığı saat/site kuralları: `ts` UTC RFC 3339 (`Z` veya açık offset) olmalı; zaman
+UTC'ye normalize edilir ve site saat dilimi yalnızca gösterim/raporlama içindir. `site_id` MQTT topic ve kalıcı depoda
+tutulmalı; mevcut REST/CSV tahmin şemasındaki `unit_id` tek başına tenant kimliği değildir. `p_suc_bar.mean` /
+`p_dis_bar.mean` adapter tarafından kanonik mutlak basınç `p_suc` / `p_dis` değerlerine çevrilir; `pressure_ref`
+zorunludur. Eksik ölçüm `null` ve kalite koduyla taşınır, sıfıra çevrilmez.
 
 QoS 1 tekrar teslim edebilir; ilerideki kalıcı alımda `(site_id, unit_id, ts)` anahtarıyla idempotent yazım ve çakışan
 sequence/payload kuralı gerekir. Uzun kesintide sıfırla doldurma yapılmamalı; gateway tarafında yerel kalıcı spool ve
