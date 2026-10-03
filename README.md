@@ -201,12 +201,15 @@ Model 120 sanal ünitede (60 soğuk oda, 30 dondurucu, 30 market dolabı) eğiti
 | Arızayı gerçekleşmeden önce yakalama | %100 (32 / 32) |
 | Medyan erken uyarı süresi | **6,6 gün** |
 | Yanlış alarm veren sağlıklı ünite | 0 / 60 |
-| Çok sınıflı Brier / log-loss | 0,0100 / 0,0223 (kalibrasyon uygulanmadı) |
-| Koşullu ETA mutlak hata (MAE / p90) | 28,6 / 65,5 saat (6 295 saat, 42 ünite) |
+| Çok sınıflı Brier / log-loss | 0,0100 / 0,0223 (ünite-kümeli bootstrap %95 GA: Brier 0,0065–0,0138; log-loss 0,0132–0,0332; kalibrasyon uygulanmadı) |
+| Koşullu ETA mutlak hata (MAE / p90) | 28,6 / 65,5 saat (MAE ünite-kümeli bootstrap %95 GA: 23,5–33,7 saat; 6 295 saat, 42 ünite) |
 | Doğru arıza türü tahmininde ETA mutlak hata (MAE / p90) | 28,1 / 64,5 saat (6 216 saat, 42 ünite) |
 
 İlk ETA ölçümü alarmın doğru arıza türünü bulmasını şart koşmaz; ikinci ölçüm doğru tür eşleşmesini ister. İki ölçüm de yalnızca
 gerçek arızaya kalan süresi pozitif olan test saatlerini kapsar.
+Ham sınıf olasılıklarının 10-bin one-vs-rest reliability özeti makro ECE 0,0013 verdi; sınıf dengesizliği ve seyrek
+yüksek olasılık binleri nedeniyle bu sayı kalibrasyon kanıtı değildir. Güven aralıkları ünite kümeleri üzerinden
+hesaplanmıştır; saatler bağımsız örnek sayılmamıştır. Kalibratör veya tek ETA tahmini için tahmin aralığı yoktur.
 Tüm sayılar aynı dağılımdan üretilmiş sentetik test filosuna aittir; saha başarımı olarak yorumlanmamalıdır.
 
 Sabit dış ortam kayması stresi (aynı test filosu, sentetik): −8 °C'de doğruluk %99,32 ve 1/60 yanlış alarm;
@@ -299,10 +302,11 @@ ruff check .    # kod stili denetimi
 - [x] REST API ve Docker Compose ile yerel prototip dağıtımı
 - [x] CLI e-posta / Telegram / webhook bildirimleri; panelde ayar dışa aktarma ve deneme önizlemesi
 - [ ] Chiller tipi
-- [ ] MQTT ile canlı veri alma prototipi; sonra pilot sensör / IoT ağ geçidi (MQTT, Modbus)
+- [x] MQTT v1 telemetry mesajı doğrulama/kanonik alan normalizer prototipi (broker bağlantısı yok)
+- [ ] MQTT ile canlı veri alma; yeniden bağlanma/tamponlama ve pilot sensör / IoT ağ geçidi (MQTT, Modbus)
 - [ ] Gerçek veri ve servis kayıtlarıyla modelin ince ayarı
-- [x] Sentetik doğrulama metrikleri: koşullu ETA hatası, kalibre edilmemiş olasılıklar için Brier/log-loss ve ±8 °C sabit ortam kayması stresi
-- [ ] Model doğrulaması: olasılık kalibrasyonu, eşzamanlı ekipman arızaları ve gerçek mevsim profilleri
+- [x] Sentetik doğrulama: koşullu ETA hatası, reliability binleri ve ünite-bootstrap aralıkları, kalibre edilmemiş Brier/log-loss, ±8 °C sabit ortam kayması
+- [ ] Ayrı calibration üniteleriyle olasılık kalibrasyonu ve ETA tahmin aralığı; eşzamanlı ekipman arızaları ve gerçek mevsim profilleri
 - [ ] Bulut dağıtımı ve çoklu müşteri desteği
 
 ---

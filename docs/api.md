@@ -71,6 +71,9 @@ sınıf olup gerçek arızaya kalan süre pozitif olan test saatlerinin koşullu
 eşleştiğinde hesaplanır. Ardışık saatler bağımsız örnekler değildir. Bu sentetik metrikler saha performansı ya da
 olasılık kalibrasyonu kanıtı değildir. `ortam_kaymasi_stresi`, aynı sentetik test filosuna −8 °C ve
 +8 °C sabit dış ortam ofseti uygulanan stres kontrolünü verir; gerçek mevsim veya saha testi değildir.
+Eğitim çıktısı `models/metrics.json` ayrıca sınıf-bazlı 10-bin reliability tablosu ve Brier/log-loss/ETA MAE için
+ünite-kümeli bootstrap aralıkları içerir. `/model` özeti bu ayrıntı tablolarını döndürmez; bootstrap aralıkları tek
+bir ETA tahmini için güven/tahmin aralığı değildir.
 
 ### POST /tahmin/csv
 

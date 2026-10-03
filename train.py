@@ -104,18 +104,74 @@ def seasonal_warning_summary(ew):
     )
 
 
+def _unit_bootstrap_ci(values, unit_ids, seed, n_resamples=1000):
+    """Saatleri değil üniteleri yeniden örnekleyerek ortalama için %95 güven aralığı."""
+    values = np.asarray(values, dtype=float)
+    unit_ids = np.asarray(unit_ids)
+    units, inverse = np.unique(unit_ids, return_inverse=True)
+    sums = np.bincount(inverse, weights=values, minlength=len(units))
+    counts = np.bincount(inverse, minlength=len(units))
+    rng = np.random.default_rng(seed)
+    sampled = rng.integers(0, len(units), size=(n_resamples, len(units)))
+    boot = sums[sampled].sum(axis=1) / counts[sampled].sum(axis=1)
+    return [float(x) for x in np.percentile(boot, [2.5, 97.5])]
+
+
+def _reliability_bins(classes, proba, y_true, H, n_bins=10):
+    """Testte her sınıfı bire-karşı-tümü ele alan betimleyici olasılık tablosu."""
+    truth = np.asarray(y_true)
+    unit_ids = H["unit_id"].to_numpy()
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    class_rows, class_ece = {}, []
+    for col, label in enumerate(classes):
+        probability = proba[:, col]
+        observed = truth == label
+        bucket = np.minimum((probability * n_bins).astype(int), n_bins - 1)
+        rows, ece = [], 0.0
+        for index in range(n_bins):
+            mask = bucket == index
+            if not mask.any():
+                continue
+            mean_probability = float(probability[mask].mean())
+            observed_rate = float(observed[mask].mean())
+            count = int(mask.sum())
+            ece += count / len(truth) * abs(mean_probability - observed_rate)
+            rows.append({
+                "alt_sinir": float(edges[index]), "ust_sinir": float(edges[index + 1]),
+                "n_hours": count, "n_units": int(np.unique(unit_ids[mask]).size),
+                "mean_probability": mean_probability, "observed_rate": observed_rate,
+            })
+        class_rows[label] = {"ece": float(ece), "bins": rows}
+        class_ece.append(ece)
+    return {
+        "method": "one_vs_rest_equal_width",
+        "n_bins": n_bins,
+        "n_units": int(np.unique(unit_ids).size),
+        "macro_ece": float(np.mean(class_ece)),
+        "classes": class_rows,
+    }
+
+
 def classification_scores(model, H, y_true):
-    """Kalibre edilmemiş sınıf olasılıklarının proper scoring ölçümleri."""
+    """Kalibre edilmemiş sınıf olasılıklarının skor ve reliability ölçümleri."""
     classes = list(model.clf.classes_)
     proba = model.clf.predict_proba(model._design(H))
     truth = np.asarray([classes.index(y) for y in y_true])
     one_hot = np.eye(len(classes))[truth]
     chosen = np.clip(proba[np.arange(len(truth)), truth], 1e-15, 1.0)
+    brier_rows = np.sum((proba - one_hot) ** 2, axis=1)
+    logloss_rows = -np.log(chosen)
     return {
         "n_hours": int(len(truth)),
-        "multiclass_brier": float(np.mean(np.sum((proba - one_hot) ** 2, axis=1))),
-        "log_loss": float(-np.mean(np.log(chosen))),
+        "n_units": int(H["unit_id"].nunique()),
+        "multiclass_brier": float(np.mean(brier_rows)),
+        "log_loss": float(np.mean(logloss_rows)),
         "calibrated": False,
+        "unit_bootstrap_95_ci": {
+            "multiclass_brier": _unit_bootstrap_ci(brier_rows, H["unit_id"], seed=101),
+            "log_loss": _unit_bootstrap_ci(logloss_rows, H["unit_id"], seed=102),
+        },
+        "reliability": _reliability_bins(classes, proba, y_true, H),
     }
 
 
@@ -127,7 +183,7 @@ def eta_scores(model, H, pred):
         "dogru_ariza_turu": (alarm & (pred["pred_fault"] == H["label"])).to_numpy(),
     }
 
-    def ozet(mask):
+    def ozet(mask, seed):
         if not mask.any():
             return {"n_hours": 0, "n_units": 0, "mae_h": None,
                     "median_abs_error_h": None, "p90_abs_error_h": None}
@@ -139,13 +195,14 @@ def eta_scores(model, H, pred):
             "n_hours": int(mask.sum()),
             "n_units": int(sample["unit_id"].nunique()),
             "mae_h": float(np.mean(error)),
+            "mae_unit_bootstrap_95_ci_h": _unit_bootstrap_ci(error, sample["unit_id"], seed=seed),
             "median_abs_error_h": float(np.median(error)),
             "p90_abs_error_h": float(np.percentile(error, 90)),
         }
 
     return {
-        **ozet(masks["alarm"]),
-        "dogru_ariza_turu": ozet(masks["dogru_ariza_turu"]),
+        **ozet(masks["alarm"], seed=201),
+        "dogru_ariza_turu": ozet(masks["dogru_ariza_turu"], seed=202),
         "kosul": "non_normal_alarm",  # doğru arıza türü eşleşmesi ana ölçümde şart değildir
     }
 

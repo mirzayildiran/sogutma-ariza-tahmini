@@ -35,12 +35,24 @@ def test_metrics_content(trained_root):
     p = m["probability_scores"]
     assert p["n_hours"] > 0 and 0 <= p["multiclass_brier"] <= 2 and p["log_loss"] >= 0
     assert p["calibrated"] is False
+    assert p["n_units"] == N_TEST
+    assert 0 <= p["reliability"]["macro_ece"] <= 1
+    assert p["reliability"]["n_units"] == N_TEST
+    assert set(p["unit_bootstrap_95_ci"]) == {"multiclass_brier", "log_loss"}
+    assert all(len(ci) == 2 and ci[0] <= ci[1]
+               for ci in p["unit_bootstrap_95_ci"].values())
+    assert all("n_hours" in row and "n_units" in row
+               for group in p["reliability"]["classes"].values() for row in group["bins"])
+    assert all(sum(row["n_hours"] for row in group["bins"]) == p["n_hours"]
+               for group in p["reliability"]["classes"].values())
     eta = m["eta_error"]
     assert eta["n_hours"] > 0 and eta["n_units"] > 0
+    assert len(eta["mae_unit_bootstrap_95_ci_h"]) == 2
     assert 0 <= eta["median_abs_error_h"] <= eta["p90_abs_error_h"]
     assert eta["mae_h"] >= 0
     exact = eta["dogru_ariza_turu"]
     assert 0 < exact["n_hours"] <= eta["n_hours"]
+    assert len(exact["mae_unit_bootstrap_95_ci_h"]) == 2
     assert 0 <= exact["median_abs_error_h"] <= exact["p90_abs_error_h"]
     seasonal = m["seasonal_shift"]
     assert set(seasonal) == {"-8C", "+8C"}
