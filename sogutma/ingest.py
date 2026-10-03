@@ -21,7 +21,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from .simulator import STEP_MIN, sat_temperature
+from .simulator import SENSORLER, STEP_MIN, sat_temperature
 
 GAUGE_TO_ABS = 1.013  # bar (efektif) → bar (mutlak)
 COMP_ON_THRESHOLD_A = 0.5  # comp_on yoksa: i_comp bu değerin üstündeyse kompresör çalışıyor
@@ -29,6 +29,9 @@ MAX_FFILL_MIN = 30  # bu süreye kadar olan boşluklar son değerle doldurulur
 MIN_HOURS = 24  # ünite başına en az geçerli veri süresi (saat)
 MAX_SAMPLE_MIN = 30  # bundan seyrek örnekleme kabul edilmez
 BAD_FRACTION = 0.10  # aralık dışı değer oranı bunu aşarsa sütun hatalı sayılır
+MAX_UNITS = 500  # tek analiz isteğinde en çok ünite
+MAX_SPAN_DAYS = 366  # tek ünite için en çok analiz aralığı
+MAX_GRID_POINTS = 1_000_000  # hizalama sonrası tüm ünitelerde üst sınır; bellek tüketimini sınırlar
 
 # Alan sırası: simülatörün ham veri sütun sırası (etiketler hariç)
 SCHEMA = {
@@ -434,15 +437,14 @@ def _parse_time(s):
         if t.notna().mean() >= 0.99:
             return t
     try:  # yedek: karışık biçim
-        t = pd.to_datetime(s, errors="coerce", dayfirst=True, format="mixed")
-        if getattr(t.dt, "tz", None) is not None:
-            t = t.dt.tz_localize(None)
+        # Naif damgalar UTC kabul edilir; açık offset taşıyanlar UTC'ye çevrilir.
+        t = pd.to_datetime(s, errors="coerce", dayfirst=True, format="mixed", utc=True).dt.tz_localize(None)
     except (ValueError, TypeError, AttributeError):
         return best
     return t if t.notna().sum() >= best.notna().sum() else best
 
 
-def _check_range(vals, col, report, errors):
+def _check_range(vals, col, report, errors, *, allow_sensor_faults=False):
     lo, hi = (SCHEMA.get(col) or EXTRA_SCHEMA[col])["aralik"]
     bad = vals.notna() & ((vals < lo) | (vals > hi))
     n_ok = int(vals.notna().sum())
@@ -450,6 +452,12 @@ def _check_range(vals, col, report, errors):
         return vals
     frac = bad.sum() / max(n_ok, 1)
     birim = (SCHEMA.get(col) or EXTRA_SCHEMA[col])["birim"]
+    if allow_sensor_faults:
+        report.uyarilar.append(
+            f"'{col}': {int(bad.sum())} değer fiziksel aralığın ({lo}..{hi} {birim}) dışında; "
+            "sensör sağlığı denetimine bırakıldı."
+        )
+        return vals
     if frac > BAD_FRACTION:
         errors.append(
             f"'{col}' değerlerinin {frac:.0%} kadarı fiziksel aralığın ({lo}..{hi} {birim}) dışında "
@@ -551,6 +559,7 @@ def load_dataframe(
     tip=None,
     comp_threshold=COMP_ON_THRESHOLD_A,
     max_gap_min=MAX_FFILL_MIN,
+    allow_sensor_faults=False,
 ):
     """Metin sütunlu ham tabloyu doğrular ve simülatör ham biçimine çevirir.
 
@@ -622,6 +631,23 @@ def load_dataframe(
         d["unit_id"] = unit_id or "U1"
         report.bilgiler.append(f"unit_id sütunu yok; tek ünite varsayıldı ('{d['unit_id'].iloc[0]}').")
 
+    uniteler = d.groupby("unit_id", sort=False)["timestamp"]
+    if d["unit_id"].nunique() > MAX_UNITS:
+        raise ValidationError(f"Tek analiz isteğinde en fazla {MAX_UNITS} ünite desteklenir.")
+    grid_nokta = 0
+    for uid, zamanlar in uniteler:
+        span = zamanlar.max() - zamanlar.min()
+        if span > pd.Timedelta(days=MAX_SPAN_DAYS):
+            raise ValidationError(
+                f"Ünite '{uid}': analiz aralığı en fazla {MAX_SPAN_DAYS} gün olabilir."
+            )
+        grid_nokta += int(np.ceil(span / pd.Timedelta(minutes=STEP_MIN))) + 13
+    if grid_nokta > MAX_GRID_POINTS:
+        raise ValidationError(
+            f"Veri 5 dakikalık ızgaraya hizalandığında çok büyük ({grid_nokta:,} nokta); "
+            f"üst sınır {MAX_GRID_POINTS:,}. Ünite veya tarih aralığını azaltın."
+        )
+
     # 3b) Ekipman tipi: sütun > tip parametresi > soğuk oda; ünite başına tek değer (en sık görülen)
     if "tip" in d:
         canon = d["tip"].astype(str).str.strip().map(_canon_tip)
@@ -686,7 +712,10 @@ def load_dataframe(
         )
     for c in NUM_COLS + list(EXTRA_SCHEMA):
         if d[c].notna().any():
-            d[c] = _check_range(d[c], c, report, errors)
+            d[c] = _check_range(
+                d[c], c, report, errors,
+                allow_sensor_faults=allow_sensor_faults and c in SENSORLER,
+            )
     if errors:
         raise ValidationError(errors)
 
@@ -694,7 +723,7 @@ def load_dataframe(
     running = comp & (d["defrost"].fillna(0) < 0.5)
     inv = running & d["p_suc"].notna() & d["p_dis"].notna() & (d["p_suc"] >= d["p_dis"])
     n_run = int((running & d["p_suc"].notna() & d["p_dis"].notna()).sum())
-    if n_run and inv.sum() / n_run > BAD_FRACTION:
+    if n_run and inv.sum() / n_run > BAD_FRACTION and not allow_sensor_faults:
         raise ValidationError(
             "Kompresör çalışırken emme basıncı basma basıncından büyük ya da eşit: "
             f"{int(inv.sum())} / {n_run} "
@@ -702,7 +731,7 @@ def load_dataframe(
                 inv.sum() / n_run
             )
         )
-    if inv.any():
+    if inv.any() and not allow_sensor_faults:
         report.uyarilar.append(
             f"{int(inv.sum())} satırda kompresör çalışırken emme ≥ basma basıncı; "
             "bu satırların basınç değerleri eksik sayıldı."

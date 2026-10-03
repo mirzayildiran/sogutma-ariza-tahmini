@@ -42,8 +42,12 @@ def sat_pressure(t_c):
 
 
 def sat_temperature(p_bar):
-    """`sat_pressure` fonksiyonunun tam tersi: basınçtan (bar, mutlak) doyma sıcaklığı (°C)."""
-    return _ANTOINE_B / (_ANTOINE_A - np.log(p_bar)) - _ANTOINE_C
+    """`sat_pressure` fonksiyonunun tam tersi: basınçtan (bar, mutlak) doyma sıcaklığı (°C).
+
+    Fiziksel olmayan girdiler (0 ya da negatif basınç: kopuk sensör) uyarı vermeden ±inf/NaN döner.
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return _ANTOINE_B / (_ANTOINE_A - np.log(p_bar)) - _ANTOINE_C
 
 
 @dataclass(frozen=True)
@@ -114,6 +118,69 @@ def tip_adi(tip):
     return TIPLER[tip].ad
 
 
+# Sensör arızası enjekte edilebilen ölçümler (ekipman arızasından bağımsız, yalnızca ölçümü bozar)
+SENSORLER = ["t_amb", "t_room", "t_coil", "p_suc", "p_dis", "sh", "sc", "i_comp", "i_fan", "vib", "t_dis"]
+# kayma: ölçüm yavaş yavaş sapar · takili: değer son okunan değerde donar · kopuk: sabit, anlamsız değer
+# veri_kaybi: NaN boşlukları · ani_sicrama: tek örneklik sıçramalar · gurultu: aşırı gürültü dönemi
+SENSOR_ARIZA_TURLERI = ["kayma", "takili", "veri_kaybi", "ani_sicrama", "gurultu", "kopuk"]
+# Sensör başına varsayılan şiddetler (elle seçilmiş mertebeler): günlük kayma, sıçrama genliği,
+# gürültü std'si ve kopuk sensörün okuduğu değer
+_SENSOR_PROFIL = {
+    "t_amb": dict(kayma=0.6, sicrama=12.0, gurultu=2.5, kopuk=-50.0),
+    "t_room": dict(kayma=0.5, sicrama=8.0, gurultu=1.0, kopuk=-50.0),
+    "t_coil": dict(kayma=0.6, sicrama=12.0, gurultu=1.5, kopuk=-50.0),
+    "p_suc": dict(kayma=0.08, sicrama=2.5, gurultu=0.35, kopuk=0.0),
+    "p_dis": dict(kayma=0.25, sicrama=8.0, gurultu=1.0, kopuk=0.0),
+    "sh": dict(kayma=0.6, sicrama=15.0, gurultu=3.0, kopuk=-50.0),
+    "sc": dict(kayma=0.5, sicrama=12.0, gurultu=2.5, kopuk=-50.0),
+    "i_comp": dict(kayma=0.3, sicrama=10.0, gurultu=1.5, kopuk=0.0),
+    "i_fan": dict(kayma=0.1, sicrama=3.0, gurultu=0.5, kopuk=0.0),
+    "vib": dict(kayma=0.3, sicrama=8.0, gurultu=1.5, kopuk=0.0),
+    "t_dis": dict(kayma=1.0, sicrama=25.0, gurultu=4.0, kopuk=-50.0),
+}
+
+
+@dataclass(frozen=True)
+class SensorFault:
+    """Tek bir sensörde enjekte edilen ölçüm arızası (fiziksel süreci değiştirmez).
+
+    `start_h`: başlangıç (saat, simülasyon başından); `duration_h`: süre (None = veri sonuna kadar).
+    `magnitude`: kayma için birim/gün, ani_sicrama için sıçrama genliği, gurultu için std,
+    kopuk için okunan sabit değer (verilmezse sensöre göre varsayılan).
+    `rate`: ani_sicrama için örnek başına olasılık (varsayılan 0,02), veri_kaybi için kaybolan
+    zaman oranı (varsayılan 0,25; boşluk uzunlukları `gap_h` aralığından seçilir).
+    """
+
+    sensor: str
+    kind: str
+    start_h: float
+    duration_h: Optional[float] = None
+    magnitude: Optional[float] = None
+    rate: Optional[float] = None
+    gap_h: Tuple[float, float] = (0.5, 6.0)
+
+    def __post_init__(self):
+        if self.sensor not in SENSORLER:
+            raise ValueError(f"Bilinmeyen sensör: {self.sensor!r} (geçerli: {', '.join(SENSORLER)})")
+        if self.kind not in SENSOR_ARIZA_TURLERI:
+            raise ValueError(
+                f"Bilinmeyen sensör arıza türü: {self.kind!r} (geçerli: {', '.join(SENSOR_ARIZA_TURLERI)})")
+        if not np.isfinite(self.start_h) or self.start_h < 0:
+            raise ValueError("Sensör arızası: başlangıç sonlu ve ≥ 0 olmalı.")
+        if self.duration_h is not None and (not np.isfinite(self.duration_h) or self.duration_h <= 0):
+            raise ValueError("Sensör arızası: başlangıç ≥ 0 ve süre > 0 olmalı.")
+        if self.magnitude is not None and not np.isfinite(self.magnitude):
+            raise ValueError("Sensör arızası: büyüklük sonlu olmalı.")
+        if self.rate is not None and (not np.isfinite(self.rate) or not 0 <= self.rate <= 1):
+            raise ValueError("Sensör arızası: oran 0 ile 1 arasında olmalı.")
+        if (len(self.gap_h) != 2 or not all(np.isfinite(v) for v in self.gap_h)
+                or self.gap_h[0] <= 0 or self.gap_h[1] < self.gap_h[0]):
+            raise ValueError("Sensör arızası: boşluk aralığı 0 < alt ≤ üst olmalı.")
+
+    def end_h(self):
+        return np.inf if self.duration_h is None else self.start_h + self.duration_h
+
+
 @dataclass
 class Unit:
     unit_id: str
@@ -126,10 +193,12 @@ class Unit:
     fault_start_h: float = 0.0
     fault_duration_h: float = 1.0
     tip: str = "soguk_oda"
+    sensor_faults: Tuple[SensorFault, ...] = ()  # isteğe bağlı sensör arızaları (ekipmandan bağımsız)
 
     def __post_init__(self):
         if self.tip not in TIPLER:
             raise ValueError(f"Bilinmeyen ekipman tipi: {self.tip!r} (geçerli: {', '.join(TIPLER)})")
+        self.sensor_faults = tuple(self.sensor_faults)
         if self.setpoint is None:
             self.setpoint = TIPLER[self.tip].setpoint
 
@@ -250,7 +319,46 @@ def simulate_unit(unit: Unit, days: int, seed: int) -> pd.DataFrame:
     df["hours_to_failure"] = np.clip(unit.failure_h - t_hours, 0, None)
     for c in ("comp_on", "defrost", "door_open"):
         df[c] = df[c].astype(bool)
+    for k, f in enumerate(unit.sensor_faults):
+        _sensor_arizasi_uygula(df, f, np.random.default_rng([seed, 4099, k]))
     return df
+
+
+def _sensor_arizasi_uygula(df, f: SensorFault, rng):
+    """Sensör arızasını ham veriye yerinde uygular. Ayrı rastgele akış kullanır; fizik etkilenmez."""
+    t_h = np.arange(len(df)) * DT_H
+    pencere = (t_h >= f.start_h) & (t_h < f.end_h())
+    if not pencere.any():
+        return
+    x = df[f.sensor].to_numpy(dtype=float).copy()
+    var = pencere & ~np.isnan(x)  # sh / sc kompresör durunca zaten tanımsızdır (NaN kalır)
+    prof = _SENSOR_PROFIL[f.sensor]
+    mag = f.magnitude
+    if f.kind == "takili":
+        i0 = int(np.argmax(pencere))
+        once = x[:i0][~np.isnan(x[:i0])]
+        x[var] = once[-1] if len(once) else x[var][0]
+    elif f.kind == "kopuk":
+        x[var] = prof["kopuk"] if mag is None else mag
+    elif f.kind == "kayma":
+        gunluk = prof["kayma"] if mag is None else mag
+        x[var] += gunluk / 24 * (t_h[var] - f.start_h)
+    elif f.kind == "gurultu":
+        x[var] += rng.normal(0, prof["gurultu"] if mag is None else mag, int(var.sum()))
+    elif f.kind == "ani_sicrama":
+        oran = 0.02 if f.rate is None else f.rate
+        sec = var & (rng.random(len(x)) < oran)
+        genlik = (prof["sicrama"] if mag is None else mag) * rng.uniform(0.7, 1.3, int(sec.sum()))
+        x[sec] += genlik * rng.choice([-1.0, 1.0], int(sec.sum()))
+    else:  # veri_kaybi
+        oran = 0.25 if f.rate is None else f.rate
+        bitis = min(f.end_h(), t_h[-1] + DT_H)
+        sure = bitis - f.start_h
+        ort = sum(f.gap_h) / 2
+        for _ in range(max(1, int(round(oran * sure / ort)))):
+            bas = rng.uniform(f.start_h, max(f.start_h, bitis - f.gap_h[0]))
+            x[(t_h >= bas) & (t_h < bas + rng.uniform(*f.gap_h))] = np.nan
+    df[f.sensor] = x
 
 
 def simulate_fleet(units, days, seed):
@@ -282,14 +390,25 @@ def _tip_dagilimi(n_units, agirlik, seed):
     return [str(t) for t in tipler]
 
 
-def random_fleet(n_units, days, seed, fault_ratio=0.75, tip_agirlik=None):
+def _rastgele_sensor_arizasi(rng, days):
+    """Bir sensörde, ekipman arızasından bağımsız tek bir rastgele ölçüm arızası."""
+    sure = rng.uniform(3, 10) * 24
+    bas = rng.uniform(1.5 * 24, max(2.0 * 24, days * 24 - 4 * 24))
+    return SensorFault(sensor=str(rng.choice(SENSORLER)), kind=str(rng.choice(SENSOR_ARIZA_TURLERI)),
+                       start_h=float(bas), duration_h=float(sure))
+
+
+def random_fleet(n_units, days, seed, fault_ratio=0.75, tip_agirlik=None, sensor_fault_ratio=0.0):
     """Eğitim/test için rastgele tip ve arıza senaryolu filo üretir.
 
     Varsayılan tip dağılımı: %50 soğuk oda, %25 dondurucu, %25 market dolabı
     (`tip_agirlik` ile değiştirilebilir). Her tipte tüm arıza türleri mümkündür.
+    `sensor_fault_ratio` > 0 ise üniteler bu olasılıkla (ekipman arızasından bağımsız) bir sensör
+    arızası da alır; ayrı bir rastgele üreteç kullanıldığı için 0 iken filo eskisiyle birebir aynıdır.
     """
     rng = np.random.default_rng(seed)
     tipler = _tip_dagilimi(n_units, tip_agirlik or TIP_AGIRLIK, seed)
+    srng = np.random.default_rng([seed, 31337])
     units = []
     for k in range(n_units):
         P = TIPLER[tipler[k]]
@@ -302,6 +421,8 @@ def random_fleet(n_units, days, seed, fault_ratio=0.75, tip_agirlik=None):
             ambient_offset=rng.normal(0, 3), door_traffic=rng.uniform(0.5, 1.6),
             fault=str(fault), fault_start_h=start, fault_duration_h=dur, tip=tipler[k],
         ))
+        if sensor_fault_ratio > 0 and srng.random() < sensor_fault_ratio:
+            units[-1].sensor_faults = (_rastgele_sensor_arizasi(srng, days),)
     return units
 
 

@@ -2,7 +2,7 @@
 
 # ❄️ Yapay Zekâ Destekli Soğutma Arıza Tahmini
 
-**Soğuk oda, dondurucu ve market dolaplarındaki arızaları, ürün bozulmadan günler önce tahmin eden kestirimci bakım sistemi.**
+**Soğuk oda, dondurucu ve market dolaplarında erken arıza uyarısını araştıran kestirimci bakım prototipi.**
 
 [![CI](https://github.com/mirzayildiran/sogutma-ariza-tahmini/actions/workflows/ci.yml/badge.svg)](https://github.com/mirzayildiran/sogutma-ariza-tahmini/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)
@@ -25,8 +25,8 @@ Oysa arızaların çoğu **aniden olmaz**: gaz kaçağı, kirlenen kondenser ya 
 günler öncesinden basınç, sıcaklık, akım ve titreşim verilerinde küçük izler bırakır.
 Bu izler insan gözüyle fark edilemeyecek kadar küçüktür ama yapay zekâ onları yakalayabilir.
 
-**Bu proje, soğutma sistemlerini 7/24 izleyen ve arızayı gerçekleşmeden önce servis ekibine
-bildiren bir sistemin çalışan prototipidir.**
+**Bu proje, soğutma sistemlerinden gelen sensör verisiyle erken uyarı üretmeyi hedefleyen çalışan bir demo prototipidir.**
+Gerçek saha verisiyle doğrulanmamıştır; model ve sensör kalite sonuçları sentetik simülasyonla sınırlıdır.
 
 ## ✨ Özellikler
 
@@ -40,7 +40,11 @@ bildiren bir sistemin çalışan prototipidir.**
 - 📥 **Kendi verini analiz et**: Panelden sensör CSV'si yükle (ya da örnek veriyi kullan), ünite başına sağlık, olası arıza ve kalan süreyi gör, saatlik raporu indir
 - 💰 **Maliyet ve kazanç (ROI) hesaplayıcı**: Kendi rakamlarınla yıllık önlenen maliyet, net fayda, geri ödeme süresi ve duyarlılık analizi
 - 🔔 **Bildirim ayarları**: Panelden uyarı kurallarını (süreklilik, bekleme süresi, sessiz saatler) ve kanalları (e-posta, Telegram, webhook) ayarla, JSON olarak indir; demo filosunda mesajları **deneme modunda** önizle (panelden gerçek gönderim yapılmaz, parola/token panelde girilmez)
+- 🧪 **Sensör kalite uyarıları**: Takılı, kopuk, kayıp, gürültülü veya fiziksel olarak tutarsız sensör okumalarını ekipman arızası tahmininden ayrı gösterir; şüpheli öznitelikleri model girdisinden nötrler. Eşikler sezgiseldir ve saha için doğrulanmamıştır.
 - 🧪 **Fizik esaslı simülatör**: Gerçek veri olmadan model geliştirme ve test
+
+Sensör kalite kuralları sentetik profiller ve basitleştirilmiş fiziksel ilişkiler için geliştirilmiştir. Gerçek sensör verisinde yanlış
+uyarı/kaçırma oranı ölçülmemiştir; saha eşiği olarak kullanılmadan önce pilot veride kalibre edilmelidir. Ayrıntı: [Veri formatı](docs/veri-formati.md#51-sensör-sağlığı-veri-kalitesi-kontrolleri).
 
 ## 📸 Ekran Görüntüleri
 
@@ -125,6 +129,7 @@ flowchart LR
         G[IoT ağ geçidi<br/>MQTT / Modbus]
         DB[(Zaman serisi<br/>veritabanı)]
     end
+    Q[Ham veri kalite kontrolü<br/>sensör şüphesi / temizleme]
     subgraph AI["🧠 Yapay Zekâ"]
         F[Öznitelik çıkarımı<br/>12 saatlik pencere]
         A[Anomali tespiti<br/>Isolation Forest]
@@ -133,11 +138,11 @@ flowchart LR
         H[Sağlık skoru]
     end
     P[📊 Panel]
-    N[📱 SMS / WhatsApp<br/>bildirimi]
+    N[🔔 CLI e-posta / Telegram / webhook]
 
     S --> G
     K --> G
-    G --> DB --> F
+    G --> DB --> Q --> F
     F --> A & C & R
     A & C --> H
     H & R --> P
@@ -146,7 +151,8 @@ flowchart LR
     SIM[🧪 Simülatör<br/>bu demoda] -.-> DB
 ```
 
-> Bu demoda saha katmanının yerini, fizik esaslı **simülatör** alır.
+> Saha ağ geçidi/veritabanı henüz uygulanmadı; bu demoda ham veriyi fizik esaslı **simülatör** üretir. Bildirim paneli
+> yalnızca ayar dışa aktarır ve önizleme yapar; gerçek kanallar CLI üzerinden, açıkça etkinleştirilerek gönderilir.
 
 ## ⚙️ Nasıl Çalışır?
 
@@ -195,6 +201,16 @@ Model 120 sanal ünitede (60 soğuk oda, 30 dondurucu, 30 market dolabı) eğiti
 | Arızayı gerçekleşmeden önce yakalama | %100 (32 / 32) |
 | Medyan erken uyarı süresi | **6,6 gün** |
 | Yanlış alarm veren sağlıklı ünite | 0 / 60 |
+| Çok sınıflı Brier / log-loss | 0,0100 / 0,0223 (kalibrasyon uygulanmadı) |
+| Koşullu ETA mutlak hata (MAE / p90) | 28,6 / 65,5 saat (6 295 saat, 42 ünite) |
+| Doğru arıza türü tahmininde ETA mutlak hata (MAE / p90) | 28,1 / 64,5 saat (6 216 saat, 42 ünite) |
+
+İlk ETA ölçümü alarmın doğru arıza türünü bulmasını şart koşmaz; ikinci ölçüm doğru tür eşleşmesini ister. İki ölçüm de yalnızca
+gerçek arızaya kalan süresi pozitif olan test saatlerini kapsar.
+Tüm sayılar aynı dağılımdan üretilmiş sentetik test filosuna aittir; saha başarımı olarak yorumlanmamalıdır.
+
+Sabit dış ortam kayması stresi (aynı test filosu, sentetik): −8 °C'de doğruluk %99,32 ve 1/60 yanlış alarm;
++8 °C'de doğruluk %99,35 ve 3/60 yanlış alarm. Bu sabit ofset deneyi gerçek mevsim dayanıklılığı kanıtı değildir.
 
 Ekipman tipine göre (test filosunda tip başına 15–30 ünite olduğundan yalnızca yön göstericidir):
 
@@ -260,7 +276,8 @@ ruff check .    # kod stili denetimi
 │   ├── model.py            # Anomali + sınıflandırma + kalan süre
 │   ├── ingest.py           # CSV okuma, doğrulama, 5 dk hizalama
 │   ├── bildirim.py         # Uyarı kuralları ve bildirim kanalları
-│   ├── analiz.py           # CSV → tahmin akışı (predict.py, panel ve API ortak kullanır)
+│   ├── analiz.py           # CSV/JSON → tahmin akışı (predict.py, panel ve API ortak kullanır)
+│   ├── veri_kalitesi.py    # Sensör kalite tespiti, raporlama ve şüpheli öznitelikleri nötrleme
 │   ├── api.py              # FastAPI uygulaması (tahmin servisi)
 │   ├── roi.py              # Maliyet / kazanç hesabı (saf fonksiyonlar)
 │   ├── ui.py               # Panel ortak yardımcıları (yükleme, biçimlendirme, grafikler)
@@ -278,10 +295,14 @@ ruff check .    # kod stili denetimi
 - [x] Panel: CSV yükleyip kendi verisini analiz etme sayfası
 - [x] Panel: maliyet ve kazanç (ROI) hesaplayıcı
 - [x] Dondurucu (−18 °C) ve market dolabı tipleri
+- [x] Sensör arızası simülasyonu ve sezgisel veri kalitesi uyarıları (sentetik test; saha eşiği değildir)
+- [x] REST API ve Docker Compose ile yerel prototip dağıtımı
+- [x] CLI e-posta / Telegram / webhook bildirimleri; panelde ayar dışa aktarma ve deneme önizlemesi
 - [ ] Chiller tipi
-- [ ] Pilot sahada sensör / IoT ağ geçidi kurulumu (MQTT, Modbus)
+- [ ] MQTT ile canlı veri alma prototipi; sonra pilot sensör / IoT ağ geçidi (MQTT, Modbus)
 - [ ] Gerçek veri ve servis kayıtlarıyla modelin ince ayarı
-- [ ] SMS / WhatsApp / e-posta bildirimleri
+- [x] Sentetik doğrulama metrikleri: koşullu ETA hatası, kalibre edilmemiş olasılıklar için Brier/log-loss ve ±8 °C sabit ortam kayması stresi
+- [ ] Model doğrulaması: olasılık kalibrasyonu, eşzamanlı ekipman arızaları ve gerçek mevsim profilleri
 - [ ] Bulut dağıtımı ve çoklu müşteri desteği
 
 ---
@@ -289,10 +310,10 @@ ruff check .    # kod stili denetimi
 <details>
 <summary>🇬🇧 English summary</summary>
 
-**AI-powered fault prediction for commercial refrigeration (cold rooms, freezer rooms and display cabinets).** A working prototype
-that detects and classifies five fault types (refrigerant leak, condenser fouling, evaporator icing,
-compressor wear, condenser fan failure) and estimates time-to-failure, days before the unit
-can no longer hold temperature.
+**Synthetic-data prototype exploring early fault warnings for commercial refrigeration (cold rooms, freezer rooms and display cabinets).** It demonstrates
+classification of five simulated fault types (refrigerant leak, condenser fouling, evaporator icing,
+compressor wear, condenser fan failure) and a rough time-to-failure estimate; it has not been validated
+on real equipment.
 
 Since no field data is available yet, a physics-inspired simulator generates sensor data (pressures,
 temperatures, currents, vibration) with progressively degrading faults. Models: Isolation Forest
