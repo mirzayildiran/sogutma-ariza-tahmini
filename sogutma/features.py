@@ -34,6 +34,7 @@ WINDOW_H = 12
 LABEL_COLS = ["severity", "hours_to_failure", "fault"]
 # Bir saatin öznitelik üretmesi için gereken en az örnek sayısı (12 örneğin yarısı)
 MIN_SAMPLES_PER_HOUR = 6
+KEY_SENSORS = ["t_room", "t_amb", "p_suc", "p_dis", "i_comp"]
 
 
 def _col(g, name):
@@ -78,7 +79,8 @@ def _unit_features(g):
     for t, c in TIP_FLAGS.items():
         feats[c] = float(tip == t)
     # Verinin büyük kısmı eksik olan saatler (uzun boşluklar) çıktıya alınmaz
-    n_obs = g["t_room"].resample("1h").count()
+    # Tek bir sensörün (ör. bozuk oda sıcaklığı) eksikliği saati düşürmesin: zorunlu sensörlerin en dolusu
+    n_obs = g[[c for c in KEY_SENSORS if c in g]].resample("1h").count().max(axis=1)
     feats = feats[n_obs >= MIN_SAMPLES_PER_HOUR]
 
     # İlk pencere dolana kadar (ısınma süresi) öznitelikler güvenilir değil

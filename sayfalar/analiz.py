@@ -4,6 +4,7 @@ import io
 from pathlib import Path
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from sogutma.analiz import YetersizVeri, analiz_et, son_durum
@@ -11,6 +12,7 @@ from sogutma.faults import FAULTS, fault_name, short_name
 from sogutma.features import FEATURE_LABELS
 from sogutma.ingest import SCHEMA, ValidationError
 from sogutma.ui import STATUS_STYLE, fmt_eta, load_model, root, saglik_grafigi, sinyal_grafigi, sinyal_notu
+from sogutma.veri_kalitesi import NEDEN_ADI, NOTRLEYEN, SENSOR_ADI
 
 TIP_SECENEKLERI = {None: "CSV'deki tip sütunu / soğuk oda", "soguk_oda": "Soğuk oda",
                    "dondurucu": "Dondurucu", "market_dolabi": "Market dolabı"}
@@ -135,6 +137,7 @@ st.dataframe(pd.DataFrame([{
     "Tahmini arıza": fault_name(d["pred_fault"]) if d["pred_fault"] != "normal" else "—",
     "Güven": f"%{d['confidence'] * 100:.0f}",
     "Tahmini kalan süre": fmt_eta(d["eta_h"]),
+    "Veri kalitesi": "⚠️ Sensör şüphesi" if d["sensor_sorunu"] else "—",
     "Uyarı süresi": f"{d['uyari_saat']} saat" if d["uyari_saat"] else "—",
     "Son veri": f"{d['zaman']:%d.%m.%Y %H:%M}",
 } for uid, d in durumlar.items()]), hide_index=True, width="stretch")
@@ -152,6 +155,11 @@ c[2].metric("Olası arıza", short_name(d["pred_fault"]) if d["pred_fault"] != "
 c[3].metric("Tahmini kalan süre", fmt_eta(d["eta_h"]),
             help="Kaba tahmin; sentetik veriyle eğitilmiş regresyon.")
 
+if d["sensor_sorunu"]:
+    st.warning(f"**{d['sensor_notu']}.** Önce sensörü ve kablolamayı kontrol edin: ilgili öznitelikler "
+               "arıza değerlendirmesinden çıkarıldı, yani aşağıdaki sonuç bu sensörün sinyalini içermez ve "
+               "bir ekipman arızası olarak yorumlanmamalıdır.")
+
 if d["pred_fault"] != "normal":
     st.warning(f"**Tipik belirtiler:** {FAULTS[d['pred_fault']]['belirtiler']}\n\n"
                f"**Önerilen aksiyon:** {d['oneri']}")
@@ -167,6 +175,35 @@ if d["sapmalar"]:
         [{"Sinyal": n, "Şu an": round(v, 2), "Normal ortalama": round(m, 2),
           "Sapma": f"{'▲' if z > 0 else '▼'} {abs(z):.1f}σ"} for n, v, m, z in d["sapmalar"]]),
         hide_index=True, width="stretch")
+
+# ---------------------------------------------------------------- Sensör sağlığı
+st.subheader(f"Sensör sağlığı · {uid}")
+sorunlar = analiz.sensor_sorunlari(uid)
+if sorunlar.empty:
+    st.success("Sensör sağlığı kontrolünde sorun bulunmadı (takılı, kopuk, aralık dışı, ani sıçrama, "
+               "veri kaybı, gürültü ve sensörler arası tutarlılık denetlendi).")
+else:
+    st.caption("Takılı, kopuk, veri kaybı, tutarsız (kayma şüphesi) ve gürültülü sensörlerin öznitelikleri "
+               "model girdisinden çıkarılır; ani sıçrama ve aralık dışı örnekler silinir. Kayma yalnızca "
+               "başka sensörlerle fiziksel ilişkisi olan sinyallerde (basınçlar, sıcaklıklar, akım/titreşim "
+               "sıfır referansı) yakalanır; eşikler sentetik veriye göre ayarlıdır.")
+    st.dataframe(pd.DataFrame([{
+        "Sensör": SENSOR_ADI[r.sensor], "Sorun": NEDEN_ADI[r.neden],
+        "Modelden çıkarıldı": "Evet" if r.neden in NOTRLEYEN else "Hayır (örnekler temizlendi)",
+        "İlk görülme": f"{r.ilk:%d.%m.%Y %H:%M}", "Son görülme": f"{r.son:%d.%m.%Y %H:%M}",
+        "Etkilenen saat": int(r.saat)} for r in sorunlar.itertuples()]), hide_index=True, width="stretch")
+    kodlar = analiz.kalite.saatlik.loc[uid]
+    kodlar = kodlar.loc[:, (kodlar != "").any()]
+    z = kodlar.apply(lambda c: c.map(lambda k: 2 if k in NOTRLEYEN else (1 if k else 0))).T
+    metin = kodlar.apply(lambda c: c.map(lambda k: NEDEN_ADI.get(k, "sorun yok"))).T
+    isi = go.Figure(go.Heatmap(
+        z=z.to_numpy(), x=z.columns, y=[SENSOR_ADI[s] for s in z.index], showscale=False,
+        text=metin.to_numpy(), hovertemplate="%{y}<br>%{x}<br>%{text}<extra></extra>",
+        colorscale=[[0, "#d9f0d3"], [0.33, "#d9f0d3"], [0.34, "#fdae6b"], [0.66, "#fdae6b"],
+                    [0.67, "#d7301f"], [1, "#d7301f"]], zmin=0, zmax=2))
+    isi.update_layout(height=60 + 38 * len(z), margin=dict(l=10, r=10, t=10, b=10))
+    st.plotly_chart(isi)
+    st.caption("Yeşil: sorun yok · turuncu: örnekler temizlendi · kırmızı: sensör modelden çıkarıldı.")
 
 # ---------------------------------------------------------------- Grafikler
 rapor_df = analiz.rapor_tablosu()

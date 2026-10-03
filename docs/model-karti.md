@@ -32,12 +32,13 @@ Belgedeki kod ayrıntıları `train.py` ve `sogutma/` paketindeki kaynak koda da
 | Girdi | Saatlik öznitelikler (5 dakikalık sensör verisinden, 12 saatlik kayan pencere ile) ve ünitenin ekipman tipi |
 | Çıktı | Sağlık skoru, durum (Normal / İzlemede / Kritik), olası arıza türü, güven, tahmini arızaya kalan süre, anomali skoru |
 | Kütüphane | scikit-learn (`IsolationForest`, `HistGradientBoostingClassifier`, `HistGradientBoostingRegressor`) |
-| Kod | `sogutma/model.py`, `sogutma/features.py`, `sogutma/simulator.py`, `train.py` |
+| Kod | `sogutma/model.py`, `sogutma/features.py`, `sogutma/simulator.py`, `sogutma/veri_kalitesi.py`, `train.py` |
 | Lisans | MIT (bkz. [LICENSE](../LICENSE)) |
 
 ```mermaid
 flowchart LR
-    A["Sensör verisi<br/>5 dakikada bir"] --> B["Saatlik öznitelikler<br/>12 saatlik pencere"]
+    A["Sensör verisi<br/>5 dakikada bir"] --> Q["Sensör kalite denetimi<br/>temizleme / işaretleme"]
+    Q --> B["Saatlik öznitelikler<br/>12 saatlik pencere + nötrleme"]
     B --> C["Anomali tespiti<br/>Isolation Forest"]
     B --> D["Arıza sınıflandırma<br/>Gradient Boosting"]
     B --> E["Kalan süre regresyonu<br/>Gradient Boosting"]
@@ -47,6 +48,9 @@ flowchart LR
     D --> G
     E --> G
 ```
+
+Kalite denetimi sezgisel ve simülatör koşullarına göre ayarlıdır. Bu katman gerçek sahada sensör arızası tespit performansı
+kanıtlamaz; saha kurulumunda eşikler gerçek sağlıklı veriye göre yeniden değerlendirilmelidir.
 
 ## 2. Amaç ve kullanım alanı
 
@@ -128,6 +132,24 @@ Beş arıza türü modellenmiştir; her ünitede **tek bir arıza** vardır veya
 | `evaporator_buzlanma` | Evaporatör buzlanması / defrost arızası | Evaporasyon sıcaklığı ve kızgınlık düşer; kapasite düşer; defrostta batarya yeterince ısınmaz |
 | `kompresor_asinmasi` | Kompresör aşınması | Titreşim (şiddetin karesiyle) ve kompresör akımı artar; basma hattı sıcaklığı yükselir; kapasite düşer |
 | `fan_arizasi` | Kondenser fanı arızası | Fan motor akımı ve yoğuşma sıcaklığı artar; kapasite düşer |
+
+### Sensör arızaları (isteğe bağlı)
+
+Ekipman arızasından **bağımsız** olarak, bir ünitenin tek bir sensörüne ölçüm arızası enjekte edilebilir
+(`Unit.sensor_faults`, `SensorFault`). Fiziksel süreç etkilenmez, yalnızca o sensörün okuması bozulur; varsayılan
+(arızasız) simülasyon eskisiyle bit düzeyinde aynıdır (ayrı rastgele akış kullanılır). Altı tür vardır:
+
+| Tür | Etki |
+|---|---|
+| `kayma` | Okuma, başlangıçtan itibaren doğrusal artan bir ofset kazanır (varsayılan: sensöre göre günde ≈ 0,1–1 birim; ör. oda sıcaklığı 0,5 K/gün, emme basıncı 0,08 bar/gün) |
+| `takili` | Okuma, arıza öncesi son değerde donar |
+| `kopuk` | Sabit ve anlamsız değer: sıcaklıklarda −50 °C, basınç/akım/titreşimde 0 |
+| `veri_kaybi` | Farklı uzunlukta (varsayılan 0,5–6 saat) NaN boşlukları; varsayılan olarak sürenin ≈ %25'i kayıp |
+| `ani_sicrama` | Örneklerin ≈ %2'sinde tek örneklik büyük sıçramalar (±) |
+| `gurultu` | Arıza süresince sensörün normal gürültüsünün birkaç katı gürültü |
+
+Şiddetler sensör başına elle seçilmiş mertebelerdir (`simulator._SENSOR_PROFIL`); gerçek sensör arıza istatistiklerine
+dayanmaz. Sensör arızasının kontrol cihazını etkilemesi (ör. bozuk probun termostatı yanlış yönlendirmesi) modellenmemiştir.
 
 ### Şiddet eğrisi ve arıza anı
 
@@ -236,6 +258,31 @@ Ek ayrıntılar:
   hesaplar, mutlak değeri ≥ 2 olan en çok sapan en fazla 4 sinyali listeler (`t_amb` hariç). Bu, modelin
   iç işleyişinin tam açıklaması değil, **sağlıklı davranıştan sapmanın** özetidir.
 
+### Sensör sağlığı katmanı (model dışı ön işleme)
+
+Sensör arızası model tarafından ekipman arızası sanılmasın diye, öznitelik çıkarımından önce ham veri
+`sogutma/veri_kalitesi.py` ile taranır (modelin kendisi ve `MODEL_VERSION` değişmemiştir; katman eğitim etiketi kullanmaz):
+
+1. **Kontroller (5 dakikalık ham veri, ünite başına):** aralık dışı değer, takılı (ardışık 1–2 saat boyunca değişmeyen okuma;
+   yalnızca kompresör çalışırken okunan sensörlerde 12 geçerli örnek), kopuk (sabit anlamsız değer, çalışırken 0 A), veri kaybı
+   (saatin yarısından fazlası eksik), ani sıçrama (yerel medyandan sapma), gürültü, ve **sensörler arası fiziksel ilişkiler**:
+   çalışırken batarya sıcaklığı ≈ doyma sıcaklığı(emme) + 1 K; uzun duruşta doyma sıcaklığı(emme) ≈ oda ≈ batarya, doyma
+   sıcaklığı(basma) ≈ dış ortam + 2 K ve basma hattı ≈ dış ortam; dururken akım/titreşim ≈ 0; çalışırken emme < basma. İlişki
+   sapmasının 12 saatlik medyanı eşiği (1 K) aşarsa, sapan çiftlerin ortak sensörü "tutarsız (kayma şüphesi)" sayılır; tek çift
+   sapıyorsa iki sensör de şüphelidir.
+2. **Çıktı:** (ünite, saat, sensör) bazında neden kodu (`takili`, `kopuk`, `veri_kaybi`, `tutarsiz`, `gurultu`, `ani_sicrama`,
+   `aralik_disi`) ve "Sensör şüphesi: Emme basıncı takılı" gibi metin. Bu bir **sensör arızası** teşhisidir; ekipman arızası
+   olasılığından ayrı bir kanaldır ve sağlık skorunu/durumu doğrudan değiştirmez.
+3. **Model entegrasyonu:** Ani sıçrama ve aralık dışı örnekler silinir (NaN). Takılı, kopuk, veri kaybı, tutarsız ve gürültülü
+   sensörlerin öznitelikleri (`SENSOR_OZNITELIK`; ör. emme basıncı → `p_suc`, `evap_delta`) son 12 saat (öznitelik penceresi)
+   boyunca NaN yapılır; `FaultPredictor` NaN'ı tip referansıyla doldurur, yani o sinyal ne arıza ne sağlık kanıtı olur. Diğer
+   sensörlerin özniteliği olduğu gibi kalır, bu yüzden sensörü bozuk ünitede de gerçek bir ekipman arızası kalan sinyallerden
+   yakalanabilir (bkz. değerlendirme).
+
+**Eşikler sezgiseldir:** fiziksel mantık ve sağlıklı simülasyondaki dağılım üzerinden elle seçilmiştir. İlişki kontrolleri
+simülatörün kurulumuna (ör. batarya sıcaklığının evaporasyon sıcaklığını izlemesi, duruşta basınç dengelenmesi) dayanır; gerçek
+sahada ilişkilerin merkezi ve toleransı farklı olacaktır, eşiklerin gerçek sağlıklı veriyle yeniden kalibre edilmesi gerekir.
+
 ## 6. Sağlık skoru
 
 Her saat için:
@@ -279,6 +326,10 @@ ve `FaultPredictor.classify` (sınıflandırıcının ham kararı) çıktısıyl
 | Makro F1 | 0,9886 |
 | Hatalı sınıflanan saat | 250 / 42 480 |
 
+Sınıflandırıcının verdiği ham sınıf olasılıkları için ek proper-scoring ölçümleri: çok sınıflı Brier skoru **0,0100**, log-loss
+**0,0223** (42 480 saat). Bunlar olasılıkların kalibre edildiğini göstermez; kalibrasyon uygulanmamıştır. “Güven” alanı
+bu nedenle doğruluk olasılığı olarak yorumlanmamalıdır.
+
 ### Sınıf bazında sonuçlar
 
 | Sınıf | Kesinlik (precision) | Duyarlılık (recall) | F1 | Örnek (saat) |
@@ -311,7 +362,7 @@ dönem saatlerinin bir kısmı "normal" olarak sınıflanır.
 
 Tanım (`train.py`, `early_warning`):
 
-- **Alarm:** Durumun **ardışık 6 saat** boyunca "Normal" dışında olması (`ALARM_H = 6`); alarm zamanı bu 6 saatlik dizinin ilk saatidir.
+- **Sentetik değerlendirme alarmı:** Durumun **ardışık 6 saat** boyunca "Normal" dışında olması (`ALARM_H = 6`); alarm zamanı bu 6 saatlik dizinin ilk saatidir. Bu, test metriği için kullanılan kuraldır; bildirim sisteminin canlı olay üretimiyle aynı sözleşme değildir.
 - **Yakalama:** Arızanın gerçek türü ile aynı türü tahmin eden ilk kalıcı alarm, arıza anından önce gelmişse "yakalandı" sayılır.
 - **Erken uyarı süresi:** Arıza anı − ilk doğru kalıcı alarm anı.
 - **Yanlış alarm:** Sağlıklı ünitede herhangi bir kalıcı alarm; arızalı ünitede arıza başlangıcından **önce** gelen kalıcı alarm.
@@ -325,9 +376,75 @@ Tanım (`train.py`, `early_warning`):
 | Çeyrekler arası aralık (Q1–Q3) | ≈ 5,0 – 8,3 gün |
 | Yanlış alarm veren ünite | **0 / 60** (18 sağlıklı ünitede de yanlış alarm yok) |
 
+Kalan süre (ETA) hata ölçümleri yalnızca test filosunda modelin arıza dışı sınıf verdiği ve gerçek arızaya kalan sürenin
+pozitif olduğu saatlerden hesaplanmıştır: **6 295 saat / 42 ünite**. Bu koşullu alt kümede ortalama mutlak hata **28,6 saat**,
+medyan mutlak hata **20,5 saat**, %90 mutlak hata dilimi **65,5 saattir**. Sonuçlar sentetiktir; arıza öncesi her saat için
+bağımsız tahmin performansı veya sahada sağlanacak ETA doğruluğu iddiası değildir. API bu ölçümlerin MAE ve p90 alanlarını sunar.
+Doğru arıza türü de tahmin edilmiş saatlerle sınırlanınca (**6 216 saat / 42 ünite**) MAE **28,1 saat**, p90 mutlak hata
+**64,5 saattir**. Her iki alt kümede de saatler aynı ünite içinde zamansal olarak ilişkilidir; saat sayısı bağımsız örnek sayısı
+gibi yorumlanmamalıdır. İlk ölçüm doğru tür tahmini koşulu aramaz; ikincisi arar.
+
+### Sabit dış ortam kayması stresi
+
+`train.py` aynı 60 test ünitesi profilini yeniden kurup her ünitenin simülatör `ambient_offset` değerine ayrı ayrı −8 °C ve
++8 °C ekler; model yeniden eğitilmez. Bu, sabit ortam kaymasına karşı sentetik bir stres kontrolüdür; mevsim döngüsü,
+uzun dönem geçiş, yeni ekipman popülasyonu ya da saha koşulu testi değildir.
+
+| Ortam kayması | Saatlik doğruluk | Makro F1 | Arızadan önce yakalama | Medyan erken uyarı | Yanlış alarm veren ünite |
+|---|---:|---:|---:|---:|---:|
+| −8 °C (60 ünite / 42 480 saat; 32 arıza) | %99,32 | 0,9870 | 32 / 32 | 157,6 saat | 1 / 60 |
+| +8 °C (60 ünite / 42 480 saat; 32 arıza) | %99,35 | 0,9887 | 32 / 32 | 158,1 saat | 3 / 60 |
+
+Bu sonuçlar yalnızca sabit ortam sıcaklığı ofsetinin simülatör etkisini ölçer. Ortam kaymasıyla yanlış alarm görülmesi,
+alarm eşiklerinin ve tipik dış ortam aralığının saha verisinde incelenmesi gerektiğini gösterir. Gerçek kış/yaz profiline
+dayanıklılık veya saha başarımı kanıtlanmış değildir.
+
 Arıza türüne göre medyan erken uyarı (ünite sayısı küçüktür, yalnızca yön göstericidir): gaz kaçağı
 ≈ 6,6 gün (10 ünite), kondenser kirlenmesi ≈ 8,2 (3), fan arızası ≈ 6,8 (9), buzlanma ≈ 7,0 (6),
 kompresör aşınması ≈ 4,7 (4).
+
+### Sensör arızası dayanıklılığı
+
+Soru: sensör arızası ekipman arızası alarmına yol açıyor mu ve sensör katmanı bunu önlerken gerçek arızaları kaçırıyor mu?
+Yöntem (`train.py`, `robustness`): eğitim ve test filolarından bağımsız (tohum 3) **240 üniteli, 30 günlük** bir filo; ekipman
+bakımından %50 sağlıklı / %50 arızalı. Sağlıklı ve arızalı ekipmanlı ünitelerin her birinde 66 (sensör × arıza türü)
+kombinasyonu sırayla dağıtılır (her kombinasyon bir kez), kalan üniteler kontrol grubudur; sensör arızalarının başlangıcı rastgele,
+süresi 5–10 gündür. Aynı filo iki hattan geçirilir: (1) **katman yok** = yalnızca `ingest.py` fiziksel sınır kontrolü + model;
+(2) **katman var** = sensör sağlığı katmanı + model. Alarm tanımı yukarıdaki gibidir (ardışık 6 saat Normal dışı); "sensör kaynaklı
+yanlış alarm", ekipmanı sağlıklı (ya da arızası henüz başlamamış) ünitede çıkan alarmdır. Kaynak: `models/metrics.json` → `robustness`.
+
+| Metrik | Katman yok | Katman var |
+|---|---|---|
+| Sağlıklı ekipman + sensör arızası: yanlış alarm veren ünite (66 ünite) | 9 (%14) | 2 (%3) |
+| Arızalı ekipman + sensör arızası: arıza başlamadan yanlış alarm (66 ünite) | 3 | 0 |
+| Arızalı ekipman + sensör arızası: arıza anından önce yakalama (30 gün içinde arızalanan 53 ünite) | 53 / 53 | 53 / 53 |
+| Kontrol: sensörü sağlam sağlıklı ünitelerde yanlış alarm (47 ünite) | 0 | 0 |
+| Kontrol: sensörü sağlam arızalı ünitelerde yakalama (44 ünite) | 44 / 44 | 44 / 44 |
+
+Sensör arızası tespiti (katman): enjekte edilen 132 arızanın **128'i (%97)** ilgili sensörde işaretlendi (medyan gecikme ≈ 3 saat);
+kaçırılan 4 arızanın hepsi kızgınlık / aşırı soğutma sensörlerinde **kayma** (başka sensörle fiziksel ilişkisi olmayan sinyal).
+Türe göre: takılı, kopuk, veri kaybı, ani sıçrama, gürültü 22 / 22'şer; kayma 18 / 22. 20 arızada (%15) ilgili sensörün yanında
+başka bir sensör de (ilişki kontrolünün belirsizliği nedeniyle) şüpheli işaretlendi. Sensörü sağlam 108 üniteden (61'i ekipman
+arızalı, ileri evre gaz kaçağı dahil) **hiçbirinde** sensör şüphesi çıkmadı; yani katman gerçek ekipman arızasını sensör arızası
+sanmadı ve gerçek arıza yakalama oranı değişmedi.
+
+Okuma notları (dürüstlük):
+
+- **Katman ve olmayan arasındaki fark mütevazıdır:** mevcut model sensör arızalarının çoğunda zaten yanlış alarm vermiyor
+  (66 üniteden 57'si katman olmadan da temiz; çünkü öznitelikler 12 saatlik ortalamadır ve alarm 6 saat süreklilik ister).
+  Katmanın asıl katkısı, yanlış alarm veren sensör arızalarını (katmanın ayıkladığı 7 yanlış alarmın 5'i dış ortam, oda
+  sıcaklığı ya da basma basıncı sensöründeki kayma/kopukluk/sıçrama/gürültü; 2'si fan akımı sıçrama/gürültü) ayıklamak ve
+  hangi sensörün şüpheli olduğunu **söylemektir**.
+- Katmanla kalan 2 yanlış alarm, fan akımı ve titreşim sensörünün kaymasıdır (fan arızası / kompresör aşınması gibi görünür;
+  başka sensörle ilişkisi yoktur).
+- Örneklem küçüktür (tür başına 11 sağlıklı ünite; yüzdelerin belirsizlik aralığı geniştir); sayılar tek bir filo ve tek
+  tohum içindir. Geliştirme incelemesi olarak (`train.py` çıktısı değildir), 3 tip × 11 sensör × 6 tür = 198 sağlıklı ünitenin
+  tamamı denendi (20 gün, farklı tohum): sürekli yanlış alarm veren ünite katman olmadan 25, katmanla 7 (5'i fan akımı sensörü; 2'si
+  ani sıçrama enjekte edilmiş emme/basma basıncı sensörlerinde, katman açıkken de kapalıyken de aynı ≈ 6 saatlik kısa alarm).
+- Sensör arıza şiddetleri ve eşikler aynı simülatör/geliştirme sürecinden gelir (dedektör bu şiddetlere göre ayarlanmıştır);
+  gerçek sensör arızaları daha sinsi olabilir (ör. çok yavaş kayma, kısmi takılma). Sensör katmanı **saatler-günler** mertebesinde
+  tespit eder: kayma için ilk işaret genellikle 1–3 günde gelir.
+- Katman, sağlam sensörlü verinin çıktısını değiştirmez (testle doğrulandı: katman açıkken ve kapalıyken tahminler aynı).
 
 ### Ekipman tipine göre sonuçlar
 
@@ -357,7 +474,8 @@ karşılaştırılabilir değildir (farklı test filosu).
 | Sınırlılık | Etki / risk |
 |---|---|
 | **Yalnızca sentetik veri** | Etiketler (arıza türü, şiddet, arıza anı) simülatörün kendi tanımıdır. Model, gerçek ekipmanın değil simülatörün davranışını öğrenmiştir. |
-| **Simülasyondan gerçeğe fark (sim-to-real gap)** | Gerçek sensör sapmaları, montaj farklılıkları, ürün yükü, mevsimsellik, farklı ekipman markaları ve bakım geçmişi modellenmemiştir. Gerçek sahada başarımın düşmesi beklenmelidir. |
+| **Simülasyondan gerçeğe fark (sim-to-real gap)** | Gerçek sensör sapmaları, montaj farklılıkları, ürün yükü, mevsim döngüsü, farklı ekipman markaları ve bakım geçmişi modellenmemiştir. Yalnızca sabit ±8 °C dış ortam kayması sentetik olarak denenmiştir; bu gerçek mevsimsellik testi değildir. Gerçek sahada başarımın düşmesi beklenmelidir. |
+| **Eşzamanlı ekipman arızaları** | Simülatör her üniteye tek ekipman arızası ve tek sınıf etiketi verir. Eşzamanlı ekipman arızasının davranışı veya çoklu etiketli teşhis değerlendirilmemiştir; mevcut arıza türü tahmini bu senaryo için doğrulanmış değildir. |
 | **Test filosu aynı dağılımdan** | Test ünitelerinin parametreleri aynı rastgele dağılımdan çekilmiştir; dağılım kayması test edilmemiştir. Ayrıca test örnekleri (saatlik, 12 saat pencereli) zamansal olarak yüksek korelasyonludur; fiilen bağımsız örnek sayısı saat sayısından çok daha düşüktür (ünite sayısı olan 60 mertebesindedir). |
 | **Küçük test örneklemi** | 60 ünite (18 sağlıklı, 42 arızalı; bazı arıza türlerinde 4–8 ünite); ekipman tipi başına yalnızca 15–30 ünite (4–10 sağlıklı). Yüzdelerin belirsizlik aralığı geniştir; hata payı raporlanmamıştır. |
 | **Hiperparametre ayarı yok** | Parametreler elle seçilmiştir; ayrı bir doğrulama kümesi kullanılmamıştır. |
@@ -368,7 +486,7 @@ karşılaştırılabilir değildir (farklı test filosu).
 | Sınırlılık | Etki / risk |
 |---|---|
 | **Tek arıza** | Her ünitede en fazla bir arıza vardır. Aynı anda birden fazla arıza, arıza etkileşimleri ve belirtilerin birbirini maskelemesi modellenmemiştir; sınıflandırıcı tek arıza varsayar. |
-| **Sensör arızası yok** | Takılı kalan, kayan, kopuk veya yanlış kalibre sensörler simüle edilmemiştir. Sensör hatası model tarafından yanlışlıkla ekipman arızası (veya tersi) olarak yorumlanabilir. Veri kalite kontrolü ayrı bir katman olarak gereklidir. |
+| **Sensör arızası: kısmi koruma** | Simülatör takılı, kayan, kopuk, eksik ve gürültülü sensörleri üretir ve `veri_kalitesi.py` bunları ayırır (yukarıda). Ancak: (1) eşikler sentetik veride ayarlıdır; (2) başka sensörle fiziksel ilişkisi olmayan sinyallerin (kızgınlık, aşırı soğutma, fan akımı, titreşim, basma sıcaklığının bir kısmı) **kayması yakalanamaz** ve ekipman arızası gibi görünebilir; (3) gerçek sahada kontrol cihazı kendi probunu kullandığı için sensör kayması ısıl süreci de etkiler ve ayrıştırması daha zordur; (4) kayma ancak 1–3 gün sonra işaretlenir, bu sürede model etkilenebilir; (5) birden çok sensör aynı anda bozulursa (ortak güç/haberleşme arızası) ve sensör + ekipman arızası birlikteyken kalan sinyaller zayıflar; bu bileşimler denenmemiştir. |
 | **Yalnızca kademeli, monoton arızalar** | Arızalar düzgün biçimde ilerleyen bir şiddet eğrisine sahiptir. Ani arızalar (kompresör kilitlenmesi, kontaktör/elektrik arızası, enerji kesintisi), aralıklı arızalar ve iyileşen durumlar yoktur. |
 | **Yalnızca R404A** | Doyma eğrisi ve `cond_approach`/`evap_delta` öznitelikleri R404A'ya göre kurulmuştur. Başka gazlar (R134a, R449A vb.) için eğri değiştirilmeli ve model yeniden eğitilmelidir. |
 | **Üç ekipman tipi** | Yalnızca soğuk oda, dondurucu oda ve market dolabı vardır; chiller ve çok kompresörlü veya kaskad sistemler kapsam dışıdır. Tip parametreleri elle seçilmiş makul mertebelerdir, gerçek ekipman verisiyle kalibre edilmemiştir. Ünitenin tipi **bilinmelidir** (model tipi kendisi çıkarmaz): dondurucu verisi soğuk oda olarak verilirse sağlıklı ünite arızalı görünür (denemede 6 günlük sağlıklı dondurucu verisinin saatlerinin yalnızca %5'i "Normal" kaldı). |
@@ -407,7 +525,7 @@ netleştirilmelidir.
 | 5 | **ETA doğruluğu** | Gerçekleşen kalan süre ile tahminin hatası (MAE, tahmin aralığı kapsama oranı) | [hedef belirlenecek] |
 | 6 | Sim-to-real farkı | Simülatör dağılımı ile gerçek veri dağılımının öznitelik bazında karşılaştırılması; sağlıklı gerçek veride anomali skoru dağılımı | Kalibrasyon sonrası sağlıklı ünitelerin çoğunluğu "Normal" |
 | 7 | Eşiklerin kalibrasyonu | Sağlık skoru eşikleri (75/50) ve alarm kuralı (6 saat) için ROC/PR analizi | Hedeflenen yanlış alarm/yakalama dengesi |
-| 8 | Çoklu arıza ve sensör arızası davranışı | Sensör kopması/kayması senaryolarının sahada veya kontrollü olarak denenmesi | Sensör hatasının ayrı bir uyarı olarak işaretlenmesi |
+| 8 | Çoklu arıza ve sensör arızası davranışı | Sensör kopması/kayması senaryolarının sahada veya kontrollü olarak denenmesi; `veri_kalitesi.py` eşiklerinin ve fiziksel ilişki merkezlerinin gerçek sağlıklı veriyle yeniden kalibrasyonu | Sensör hatasının ayrı bir uyarı olarak işaretlenmesi; sağlıklı gerçek veride sensör şüphesi oranı düşük |
 | 9 | Ekipman çeşitliliği | Farklı marka/kapasite/gaz/hedef sıcaklıkta ünitelerde başarımın karşılaştırılması | [pilotta belirlenecek] |
 | 10 | Kullanıcı kabulü ve iş akışı | Servis ekibinin uyarıyı anlaması, aksiyon alması, uyarıdan arıza önlemeye kadar geçen süre | [pilotta belirlenecek] |
 | 11 | Modelin zamanla sapması (drift) | Mevsimsel değişim, bakım sonrası davranış; yeniden eğitim ihtiyacının izlenmesi | Düzenli izleme planı |

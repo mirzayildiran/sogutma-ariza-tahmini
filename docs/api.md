@@ -64,7 +64,13 @@ curl http://localhost:8000/model
 ```
 Yanıtın `sentetik: true` alanı ve `uyari` metni her zaman bulunur. `metrikler` içinde saatlik doğruluk,
 makro F1, arıza öncesi yakalama oranı, medyan erken uyarı süresi (gün), yanlış alarm veren ünite sayısı ve
-ekipman tipine göre dökümü yer alır; hepsi sentetik test filosundan gelir.
+ekipman tipine göre dökümü yer alır; hepsi sentetik test filosundan gelir. Ayrıca `multiclass_brier` ve `log_loss`
+ham, **kalibre edilmemiş** sınıf olasılıklarını ölçer. `eta_mae_saat` ve `eta_p90_mutlak_hata_saat`, `pred_fault` arıza dışı
+sınıf olup gerçek arızaya kalan süre pozitif olan test saatlerinin koşullu ETA hatalarıdır; doğru arıza türünün tahmin edilmesini
+şart koşmaz. `eta_dogru_tur_mae_saat` ve `eta_dogru_tur_p90_mutlak_hata_saat` yalnızca tür tahmini gerçek etiketle
+eşleştiğinde hesaplanır. Ardışık saatler bağımsız örnekler değildir. Bu sentetik metrikler saha performansı ya da
+olasılık kalibrasyonu kanıtı değildir. `ortam_kaymasi_stresi`, aynı sentetik test filosuna −8 °C ve
++8 °C sabit dış ortam ofseti uygulanan stres kontrolünü verir; gerçek mevsim veya saha testi değildir.
 
 ### POST /tahmin/csv
 
@@ -107,7 +113,10 @@ Yanıt (kısaltılmış; örnek CSV):
       ],
       "oneri": "Kaçak testi yapın (elektronik dedektör / köpük), kaçağı giderin, ...",
       "uyari_baslangic": "2026-01-06T19:00:00",
-      "uyari_saat": 101
+      "uyari_saat": 101,
+      "sensor_sorunu": false,
+      "sensor_notu": "",
+      "sensor_sorunlari": []
     }
   ],
   "rapor": {
@@ -131,10 +140,16 @@ Alanlar:
 - `kalan_saat`: arızaya kalan süre, kaba tahmin; `durum` Normal ise `null`.
 - `sapmalar`: aynı tipteki normal çalışmaya göre en çok sapan sinyaller (açıklama); `sapma_sigma` işaretli z-skorudur.
 - `uyari_baslangic` / `uyari_saat`: sondan geriye doğru kesintisiz Normal dışı süre (0 ise uyarı yok).
+- `sensor_sorunu` / `sensor_notu`: son saatte sensör sorunu varsa ayrı bir uyarı; ekipman arızası teşhisinden bağımsızdır.
+- `sensor_sorunlari`: analiz aralığı boyunca sensör ve neden kodu bazında özet (`sensor`, `neden`, `ilk`, `son`, `saat`).
+- Sensör denetimi sezgisel ve simülatör koşullarına göre ayarlıdır; saha alarmı olarak doğrulanmamıştır. Eşikler için
+  [Veri formatı](veri-formati.md#51-sensör-sağlığı-veri-kalitesi-kontrolleri) sınırlarına bakın.
 - `rapor`: veri kontrol raporu. `uyarilar` düzeltilen/atılan veriyi, `turetilen` varsayılan/türetilen alanları,
   `eksik_sensorler` ve `hesaplanamayan_oznitelikler` doğruluğu düşüren eksikleri bildirir. Gerçek veride mutlaka okuyun.
-- `saatlik` (yalnızca `saatlik=true`): her ünite ve saat için `zaman`, `unit_id`, `saglik`, `durum`, `ariza`, `guven`, `kalan_saat`.
-- Zaman damgaları, verideki yerel saattir (saat dilimi bilgisi yoktur).
+- `saatlik` (yalnızca `saatlik=true`): her ünite ve saat için tahmine ek olarak `sensor_sorunu` ve `sensor_notu` alanları.
+- API'de zaman damgaları UTC'dir. Saat dilimsiz değer UTC kabul edilir; offset içeren JSON zamanları UTC'ye çevrilir.
+  Tek JSON isteğinde saat dilimli ve saat dilimsiz değerleri karıştırmayın. Saatlik/ünite yanıtı UTC-naif ISO biçimindedir.
+  CSV ve CLI dosyalarında da saat dilimsiz zaman UTC kabul edilir; yerel saatten gönderiyorsanız açık UTC offset'i ekleyin.
 
 ### POST /tahmin/olcumler
 
@@ -146,9 +161,11 @@ zorunludur (sensör okunamadıysa değer `null` olabilir, ama alan bulunmalıdı
 Birimler ve eksik alanların etkisi için [Veri formatı](veri-formati.md). `setpoint`, `gauge`, `tip` ve `saatlik`
 istek gövdesinde üst düzey alanlardır.
 
-**En az bir gün (24 saat) geçerli veri** gerekir (ünite başına); güvenilir sonuç için 3+ gün önerilir. Servis
+**En az bir gün (24 saat) geçerli veri** gerekir (ünite başına); güvenilir sonuç için 3+ gün önerilir. Bir istekte en fazla
+500 ünite, ünite başına 366 gün ve hizalanmış toplam 1.000.000 beş dakikalık nokta kabul edilir. Servis
 durum tutmadığından her çağrıda bu pencerenin tamamını gönderin (5 dakikalık örneklemde ünite başına gün başına
-288 kayıt).
+288 kayıt). JSON ucu ayrıca en fazla 200.000 ham ölçüm kaydı kabul eder; her iki uçtaki HTTP gövdesi varsayılan
+20 MB ile sınırlıdır (`SOGUTMA_MAKS_YUKLEME_MB`).
 
 ```bash
 curl -X POST http://localhost:8000/tahmin/olcumler \
@@ -161,10 +178,10 @@ curl -X POST http://localhost:8000/tahmin/olcumler \
   "setpoint": -20,
   "saatlik": false,
   "olcumler": [
-    {"timestamp": "2026-01-05T14:35:00", "unit_id": "D1", "t_amb": 24.1, "t_room": -19.6,
+    {"timestamp": "2026-01-05T14:35:00Z", "unit_id": "D1", "t_amb": 24.1, "t_room": -19.6,
      "p_suc": 2.05, "p_dis": 13.8, "i_comp": 5.2, "i_fan": 0.9, "vib": 1.8,
      "comp_on": true, "defrost": false},
-    {"timestamp": "2026-01-05T14:40:00", "unit_id": "D1", "t_amb": 24.1, "t_room": -19.5,
+    {"timestamp": "2026-01-05T14:40:00Z", "unit_id": "D1", "t_amb": 24.1, "t_room": -19.5,
      "p_suc": 2.04, "p_dis": 13.9, "i_comp": 5.3, "i_fan": 0.9, "vib": 1.8,
      "comp_on": true, "defrost": false}
   ]

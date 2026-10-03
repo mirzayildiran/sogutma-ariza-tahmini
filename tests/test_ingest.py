@@ -7,8 +7,17 @@ import pytest
 
 import predict
 from sogutma.features import FEATURES, hourly_features
-from sogutma.ingest import OUT_COLUMNS, ValidationError, load_csv
-from sogutma.simulator import Unit, simulate_unit
+from sogutma.ingest import (
+    MAX_GRID_POINTS,
+    MAX_UNITS,
+    OUT_COLUMNS,
+    SCHEMA,
+    ValidationError,
+    load_csv,
+    load_dataframe,
+)
+from sogutma.simulator import SENSORLER, SensorFault, Unit, simulate_unit
+from sogutma.veri_kalitesi import OLASI_ARALIK, degerlendir
 
 ORNEK = Path(__file__).parent.parent / "examples" / "ornek_veri.csv"
 
@@ -37,6 +46,14 @@ def test_turkish_excel_example_parses():
     assert raw["comp_on"].dtype == bool
     assert 0.5 < raw["t_room"].mean() < 4
     assert raw["p_suc"].between(1, 10).all()
+
+
+def test_timezone_offsets_are_normalized_to_utc():
+    raw = _healthy(2)[["timestamp", "t_amb", "t_room", "p_suc", "p_dis", "i_comp"]].copy()
+    expected = raw["timestamp"].min() - pd.Timedelta(hours=3)
+    raw["timestamp"] = raw["timestamp"].dt.tz_localize("Europe/Istanbul").map(lambda t: t.isoformat())
+    got = load_csv(_csv(raw))
+    assert got["timestamp"].min() == expected
 
 
 def test_matches_simulator_values():
@@ -185,10 +202,70 @@ def test_too_sparse_sampling():
     _raises(df, "örnekleme aralığı")
 
 
+def test_analysis_limits_unit_count_and_aligned_grid_size():
+    satir = dict(timestamp="2026-01-01 00:00:00", t_amb=24, t_room=2, p_suc=5, p_dis=15, i_comp=8)
+    fazla_unite = pd.DataFrame([dict(satir, unit_id=f"U{i}") for i in range(MAX_UNITS + 1)])
+    with pytest.raises(ValidationError, match=f"en fazla {MAX_UNITS} ünite"):
+        load_dataframe(fazla_unite)
+
+    rows = []
+    for i in range(10):
+        rows.extend([
+            dict(satir, unit_id=f"U{i}", timestamp="2026-01-01 00:00:00"),
+            dict(satir, unit_id=f"U{i}", timestamp="2026-12-27 00:05:00"),
+        ])
+    with pytest.raises(ValidationError, match=f"üst sınır {MAX_GRID_POINTS:,}"):
+        load_dataframe(pd.DataFrame(rows))
+
+
+def test_analysis_limit_rejects_excessive_time_span():
+    rows = pd.DataFrame([
+        dict(timestamp="2026-01-01 00:00:00", t_amb=24, t_room=2, p_suc=5, p_dis=15, i_comp=8),
+        dict(timestamp="2027-01-03 00:05:00", t_amb=24, t_room=2, p_suc=5, p_dis=15, i_comp=8),
+    ])
+    with pytest.raises(ValidationError, match="analiz aralığı en fazla 366 gün"):
+        load_dataframe(rows)
+
+
 def test_impossible_temperatures():
     df = _basic(_healthy(2))
     df["t_room"] = df["t_room"] + 200
     _raises(df, "t_room", "fiziksel aralığın")
+
+
+def test_sensor_fault_tolerant_ingest_retains_invalid_readings_for_quality_layer():
+    df = _basic(_healthy(2, sensor_faults=(SensorFault("p_suc", "kopuk", 24),)))
+    with pytest.raises(ValidationError, match="fiziksel aralığın"):
+        load_dataframe(df)
+    got = load_dataframe(df, allow_sensor_faults=True)
+    assert (got["p_suc"] == 0).mean() > 0.1
+    assert any("sensör sağlığı denetimine bırakıldı" in w for w in got.attrs["rapor"].uyarilar)
+
+
+def test_quality_sensor_ranges_are_inside_ingest_schema_ranges():
+    assert set(OLASI_ARALIK) == set(SENSORLER)
+    for sensor, (lo, hi) in OLASI_ARALIK.items():
+        schema_lo, schema_hi = SCHEMA[sensor]["aralik"]
+        assert schema_lo <= lo <= hi <= schema_hi, sensor
+
+
+def test_tolerant_ingest_still_routes_every_invalid_sensor_range_to_quality():
+    df = _basic(_healthy(2))
+    df["sc"] = 42.0  # ingest şeması üst sınırı 40 K, kalite sınırı da 40 K olmalı
+    got = load_dataframe(df, allow_sensor_faults=True)
+    quality = degerlendir(got)
+    assert quality.saatlik["sc"].isin(["aralik_disi", "kopuk"]).any()
+
+    df = _basic(_healthy(2))
+    df["comp_on"] = True
+    df["i_comp"] = -2.0  # ingest aralığı 0'dan başlar; kalite katmanı da bunu işaretlemeli
+    got = load_dataframe(df, allow_sensor_faults=True)
+    quality = degerlendir(got)
+    assert quality.saatlik["i_comp"].isin(["aralik_disi", "kopuk"]).any()
+
+    df["setpoint"] = 999.0  # kalite katmanının izlemediği metadata hâlâ katı doğrulanır
+    with pytest.raises(ValidationError, match="setpoint.*fiziksel aralığın"):
+        load_dataframe(df, allow_sensor_faults=True)
 
 
 def test_few_outliers_become_nan_with_warning():

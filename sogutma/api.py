@@ -12,12 +12,13 @@ Ortam değişkenleri:
 import io
 import json
 import logging
+import math
 import os
 import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -27,7 +28,7 @@ from fastapi import Depends, FastAPI, File, Query, Request, Security, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel, Field, confloat
+from pydantic import BaseModel, Field, confloat, model_validator
 
 from .analiz import YetersizVeri, analiz_et, analiz_et_tablo, son_durum
 from .faults import FAULT_TYPES, FAULTS, fault_name
@@ -57,6 +58,8 @@ def maks_yukleme_bayt() -> int:
     try:
         mb = float(os.environ.get("SOGUTMA_MAKS_YUKLEME_MB", VARSAYILAN_YUKLEME_MB))
     except ValueError:
+        mb = VARSAYILAN_YUKLEME_MB
+    if not math.isfinite(mb) or mb <= 0:
         mb = VARSAYILAN_YUKLEME_MB
     return int(mb * 1024 * 1024)
 
@@ -175,8 +178,7 @@ class Olcum(BaseModel):
     """5 dakikalık tek bir ölçüm. Alanlar CSV şemasıyla aynıdır (docs/veri-formati.md)."""
 
     timestamp: datetime = Field(
-        description="Ölçüm zamanı (ISO 8601, ör. 2026-01-05T14:35:00). "
-        "Saat dilimi bilgisi atılır; yerel saat gönderin."
+        description="Ölçüm zamanı UTC (ISO 8601, ör. 2026-01-05T14:35:00Z); naif değer de UTC kabul edilir."
     )
     unit_id: str = Field("U1", description="Ünite / soğuk oda kimliği.", min_length=1, max_length=64)
     tip: Optional[str] = Field(None, description="Ekipman tipi: soguk_oda, dondurucu ya da market_dolabi.")
@@ -228,6 +230,13 @@ class OlcumIstegi(BaseModel):
     )
     saatlik: bool = Field(False, description="true ise saatlik tahmin serisi de döner.")
 
+    @model_validator(mode="after")
+    def zaman_dilimleri_tutarlı(self):
+        awareness = {m.timestamp.utcoffset() is not None for m in self.olcumler}
+        if len(awareness) > 1:
+            raise ValueError("Tüm timestamp değerleri ya saat dilimli ya da naif UTC olmalı; karıştırmayın.")
+        return self
+
 
 class Sapma(BaseModel):
     sinyal: str = Field(description="Sinyalin Türkçe adı.")
@@ -236,9 +245,17 @@ class Sapma(BaseModel):
     sapma_sigma: float = Field(description="Normalden sapma (standart sapma cinsinden, işaretli).")
 
 
+class SensorSorunu(BaseModel):
+    sensor: str = Field(description="Sorunlu sensörün kanonik alan adı (ör. p_suc).")
+    neden: str = Field(description="Sensör kalite kodu (ör. takili, veri_kaybi, tutarsiz).")
+    ilk: datetime = Field(description="Sorunun ilk görüldüğü saat.")
+    son: datetime = Field(description="Sorunun son görüldüğü saat.")
+    saat: int = Field(description="Bu kodla işaretlenen saat sayısı.")
+
+
 class UniteDurumu(BaseModel):
     unit_id: str
-    zaman: datetime = Field(description="Analizdeki son saat (verideki yerel saat).")
+    zaman: datetime = Field(description="Analizdeki son saat; UTC, yanıtta saat dilimi eklenmez.")
     saat_sayisi: int = Field(description="Analiz edilen saatlik pencere sayısı.")
     saglik: float = Field(description="Sağlık skoru, 0-100.")
     durum: str = Field(description="Normal, İzlemede ya da Kritik.")
@@ -258,6 +275,13 @@ class UniteDurumu(BaseModel):
         None, description="Kesintisiz Normal dışı sürenin başlangıcı."
     )
     uyari_saat: int = Field(description="Kesintisiz Normal dışı saat sayısı (0 ise uyarı yok).")
+    sensor_sorunu: bool = Field(False, description="Son saatte sensör kalite sorunu var mı.")
+    sensor_notu: str = Field(
+        "", description="Son saatteki sensör kalite uyarısı; ekipman arızasından ayrıdır."
+    )
+    sensor_sorunlari: List[SensorSorunu] = Field(
+        default_factory=list, description="Analiz penceresinde ünite için özet sensör sorunları."
+    )
 
 
 class UniteVeriOzeti(BaseModel):
@@ -289,6 +313,8 @@ class SaatlikKayit(BaseModel):
     ariza: str
     guven: float
     kalan_saat: Optional[float] = None
+    sensor_sorunu: bool = False
+    sensor_notu: str = ""
 
 
 class TahminYaniti(BaseModel):
@@ -320,6 +346,15 @@ class TipMetrigi(BaseModel):
     yanlis_alarm_unite: Optional[int] = None
 
 
+class OrtamStresMetrigi(BaseModel):
+    ortam_kaymasi_c: Optional[float] = None
+    saatlik_dogruluk: Optional[float] = None
+    makro_f1: Optional[float] = None
+    yakalama_orani: Optional[float] = None
+    medyan_erken_uyari_saat: Optional[float] = None
+    yanlis_alarm_unite: Optional[int] = None
+
+
 class MetrikOzeti(BaseModel):
     egitim_unite_sayisi: Optional[int] = None
     test_unite_sayisi: Optional[int] = None
@@ -331,7 +366,24 @@ class MetrikOzeti(BaseModel):
     )
     medyan_erken_uyari_gun: Optional[float] = None
     yanlis_alarm_unite: Optional[int] = None
+    multiclass_brier: Optional[float] = Field(
+        None, description="Kalibre edilmemiş olasılıklar için Brier skoru."
+    )
+    log_loss: Optional[float] = Field(None, description="Kalibre edilmemiş olasılıklar için log-loss.")
+    eta_mae_saat: Optional[float] = Field(
+        None,
+        description=(
+            "Arıza dışı sınıf tahmini ve pozitif kalan süre koşulundaki hata; "
+            "tür eşleşmesi şart değildir."
+        ),
+    )
+    eta_p90_mutlak_hata_saat: Optional[float] = None
+    eta_dogru_tur_mae_saat: Optional[float] = Field(
+        None, description="Tahmin edilen arıza türünün gerçek etiketle eşleştiği saatlerdeki ETA MAE."
+    )
+    eta_dogru_tur_p90_mutlak_hata_saat: Optional[float] = None
     tipe_gore: Dict[str, TipMetrigi] = Field(default_factory=dict)
+    ortam_kaymasi_stresi: Dict[str, OrtamStresMetrigi] = Field(default_factory=dict)
 
 
 class ModelBilgisi(BaseModel):
@@ -379,6 +431,14 @@ def _unite_durumu(analiz, uid, model) -> UniteDurumu:
         oneri=d["oneri"],
         uyari_baslangic=_zaman(d["uyari_baslangic"]),
         uyari_saat=d["uyari_saat"],
+        sensor_sorunu=d["sensor_sorunu"],
+        sensor_notu=d["sensor_notu"],
+        sensor_sorunlari=[
+            SensorSorunu(
+                sensor=r.sensor, neden=r.neden, ilk=_zaman(r.ilk), son=_zaman(r.son), saat=int(r.saat)
+            )
+            for r in analiz.sensor_sorunlari(uid).itertuples()
+        ],
     )
 
 
@@ -408,6 +468,8 @@ def _yanit(analiz, model, saatlik: bool) -> TahminYaniti:
                 ariza=s.pred_fault,
                 guven=s.confidence,
                 kalan_saat=None if s.pred_fault == "normal" else _sayi(s.eta_h),
+                sensor_sorunu=bool(s.sensor_sorunu),
+                sensor_notu=str(s.sensor_notu or ""),
             )
             for s in t.itertuples()
         ]
@@ -444,7 +506,8 @@ def _tablo(olcumler: List[Olcum]) -> pd.DataFrame:
             if v is None:
                 satir[ad] = ""
             elif ad == "timestamp":
-                satir[ad] = v.replace(tzinfo=None).strftime(ZAMAN_BICIMI)
+                utc = v.astimezone(timezone.utc).replace(tzinfo=None) if v.tzinfo else v
+                satir[ad] = utc.strftime(ZAMAN_BICIMI)
             elif isinstance(v, bool):
                 satir[ad] = "1" if v else "0"
             elif isinstance(v, float):
@@ -475,6 +538,17 @@ def _metrik_ozeti(r: Path) -> Optional[MetrikOzeti]:
         )
         for t, v in (m.get("per_tip") or {}).items()
     }
+    ortam = {
+        kayma: OrtamStresMetrigi(
+            ortam_kaymasi_c=v.get("ambient_offset_c"),
+            saatlik_dogruluk=v.get("accuracy"),
+            makro_f1=v.get("macro_f1"),
+            yakalama_orani=v.get("detection_rate"),
+            medyan_erken_uyari_saat=v.get("median_lead_h"),
+            yanlis_alarm_unite=v.get("false_alarm_units"),
+        )
+        for kayma, v in (m.get("seasonal_shift") or {}).items()
+    }
     return MetrikOzeti(
         egitim_unite_sayisi=m.get("n_train_units"),
         test_unite_sayisi=m.get("n_test_units"),
@@ -484,7 +558,16 @@ def _metrik_ozeti(r: Path) -> Optional[MetrikOzeti]:
         yakalama_orani=m.get("detection_rate"),
         medyan_erken_uyari_gun=gun(m.get("median_lead_h")),
         yanlis_alarm_unite=m.get("false_alarm_units"),
+        multiclass_brier=(m.get("probability_scores") or {}).get("multiclass_brier"),
+        log_loss=(m.get("probability_scores") or {}).get("log_loss"),
+        eta_mae_saat=(m.get("eta_error") or {}).get("mae_h"),
+        eta_p90_mutlak_hata_saat=(m.get("eta_error") or {}).get("p90_abs_error_h"),
+        eta_dogru_tur_mae_saat=(m.get("eta_error") or {}).get("dogru_ariza_turu", {}).get("mae_h"),
+        eta_dogru_tur_p90_mutlak_hata_saat=(
+            (m.get("eta_error") or {}).get("dogru_ariza_turu", {}).get("p90_abs_error_h")
+        ),
         tipe_gore=tipler,
+        ortam_kaymasi_stresi=ortam,
     )
 
 
@@ -518,6 +601,58 @@ def _konum(loc) -> str:
             continue
         s += f"[{p}]" if isinstance(p, int) else (("." if s else "") + str(p))
     return s or "istek"
+
+
+class _IstekBuyuk(Exception):
+    pass
+
+
+class GovdeBoyutuSiniri:
+    """Content-Length olmasa da ASGI gövdesini akış sırasında sınırlayan middleware."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        limit = maks_yukleme_bayt()
+        length = next((v for k, v in scope.get("headers", []) if k.lower() == b"content-length"), None)
+        if length is not None:
+            try:
+                if int(length) > limit:
+                    return await _hata_yaniti(
+                        413, "cok_buyuk", f"İstek en fazla {limit / 1048576:.0f} MB olabilir."
+                    )(scope, receive, send)
+            except ValueError:
+                pass  # Geçersiz başlıkta gerçek gövde boyutu yine sayılır.
+
+        toplam = 0
+        yanit_basladi = False
+
+        async def sinirli_al():
+            nonlocal toplam
+            ileti = await receive()
+            if ileti["type"] == "http.request":
+                toplam += len(ileti.get("body", b""))
+                if toplam > limit:
+                    raise _IstekBuyuk
+            return ileti
+
+        async def izle_yolla(ileti):
+            nonlocal yanit_basladi
+            if ileti["type"] == "http.response.start":
+                yanit_basladi = True
+            await send(ileti)
+
+        try:
+            await self.app(scope, sinirli_al, izle_yolla)
+        except _IstekBuyuk:
+            if not yanit_basladi:
+                await _hata_yaniti(
+                    413, "cok_buyuk", f"İstek en fazla {limit / 1048576:.0f} MB olabilir."
+                )(scope, receive, send)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -570,21 +705,7 @@ def create_app() -> FastAPI:
     )
     app.state.depo = ModelDeposu()
     app.state.baslangic = time.monotonic()
-
-    @app.middleware("http")
-    async def boyut_siniri(request: Request, call_next):
-        try:
-            boyut = int(request.headers.get("content-length", 0))
-        except ValueError:
-            boyut = 0
-        sinir = maks_yukleme_bayt()
-        if boyut > sinir:
-            return _hata_yaniti(
-                413,
-                "cok_buyuk",
-                f"İstek çok büyük ({boyut / 1048576:.1f} MB); en fazla {sinir / 1048576:.0f} MB.",
-            )
-        return await call_next(request)
+    app.add_middleware(GovdeBoyutuSiniri)
 
     @app.exception_handler(ApiHatasi)
     async def _api_hatasi(request: Request, e: ApiHatasi):
