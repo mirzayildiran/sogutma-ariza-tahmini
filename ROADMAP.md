@@ -15,7 +15,7 @@ Durum: çalışan demo prototipi. Tamamlandı işaretleri depodaki kod ve testle
 
 ## Sonraki: doğrulama ve veri hattı
 
-- [ ] Sensör kalite eşiklerini daha fazla sentetik profil ve tohumda ölç; gerçek saha eşikleri olarak sunma.
+- [x] Sabit sensör kalite eşiklerini ek sentetik profil/tohumlarda ölç; sonuçları saha eşiği veya saha performansı olarak sunma.
 - [x] Temel sentetik testte sınıf Brier/log-loss, koşullu ETA hatası ve ±8 °C sabit ortam kayması stres metriği üret.
 - [ ] ETA belirsizliği ve olasılık kalibrasyonunu ünite bazında ayrılmış doğrulama verisinde değerlendir.
 - [ ] Eşzamanlı ekipman arızası (mevcut sensör + ekipman arızası birlikte test edilir), uzun dönem mevsimsellik ve sıcak hava dalgası senaryolarını değerlendir.
