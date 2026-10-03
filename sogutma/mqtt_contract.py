@@ -78,7 +78,10 @@ class TelemetryV1(BaseModel):
     def timestamp_must_have_offset(cls, value: datetime) -> datetime:
         if value.utcoffset() is None:
             raise ValueError("ts saat dilimi içermeli (UTC Z veya açık offset).")
-        return value.astimezone(timezone.utc)
+        utc = value.astimezone(timezone.utc)
+        if utc.minute % 5 or utc.second or utc.microsecond:
+            raise ValueError("ts UTC 5 dakika sınırına hizalı olmalı.")
+        return utc
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,7 @@ class NormalizedTelemetry:
     comp_starts: Optional[int]
     quality: Dict[str, str]
     measurement: Dict[str, object]
+    validated_payload: Dict[str, object]
 
 
 def _parse_topic(topic: str) -> Tuple[str, str]:
@@ -168,4 +172,8 @@ def normalize_telemetry(topic: str, payload: Union[bytes, str]) -> NormalizedTel
         comp_starts=message.comp_starts,
         quality=dict(message.quality),
         measurement=measurement,
+        validated_payload={
+            **message.model_dump(mode="json", by_alias=True),
+            "ts": message.ts.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        },
     )

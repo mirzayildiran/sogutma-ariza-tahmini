@@ -47,6 +47,7 @@ def test_absolute_telemetry_maps_to_canonical_measurement_and_keeps_metadata():
 
     assert result.site_id == "S001" and result.gateway_id == "GW-0001"
     assert result.measurement["timestamp"] == "2026-10-03 09:05:00"
+    assert result.validated_payload["ts"] == "2026-10-03T09:05:00Z"
     assert result.measurement["p_suc"] == 3.9 and result.measurement["p_dis"] == 13.8
     assert result.measurement["t_suc"] == 6.5 and result.measurement["t_liq"] == 29.8
     assert result.measurement["comp_on"] is True
@@ -83,6 +84,7 @@ def test_gauge_pressure_is_normalized_to_absolute_and_null_is_preserved():
         (TOPIC, telemetry(schema=2)),
         (TOPIC, telemetry(interval_s=60)),
         (TOPIC, telemetry(ts="2026-10-03T09:05:00")),
+        (TOPIC, telemetry(ts="2026-10-03T09:06:00Z")),
         (TOPIC, telemetry(pressure_ref="relative")),
         (TOPIC, telemetry(p_suc_bar={"mean": float("nan")})),
         (TOPIC, telemetry(unexpected=True)),

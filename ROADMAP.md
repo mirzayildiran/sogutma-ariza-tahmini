@@ -21,8 +21,9 @@ Durum: çalışan demo prototipi. Tamamlandı işaretleri depodaki kod ve testle
 - [ ] Ayrı calibration üniteleri olmadan kalibratör veya ETA tahmin aralığı fit etme; böyle bir aralık için eğitim/test ünitelerinden bağımsız calibration kümesi oluştur.
 - [ ] Eşzamanlı ekipman arızası (mevcut sensör + ekipman arızası birlikte test edilir), uzun dönem mevsimsellik ve sıcak hava dalgası senaryolarını değerlendir.
 - [x] MQTT v1 telemetri sözleşmesi için saf doğrulama/kanonik alan adaptörü ekle; broker, yeniden bağlantı ve kalıcı alım kapsam dışı.
+- [x] Yerel SQLite staging prototipi: site/ünite/UTC pencere anahtarı, aynı payload'ta idempotent tekrar, çatışmada reject, eksik aralıkları doldurmama.
 - [ ] MQTT üretici/abone prototipi; zaman, birim, eksik değer ve yeniden bağlantı davranışını broker ile test et.
-- [ ] Zaman serisi saklama yaklaşımını pilot gereksinimleri, saklama süresi ve işletim maliyetine göre seç.
+- [ ] Üretim zaman-serisi saklama yaklaşımını pilot gereksinimleri, saklama süresi ve işletim maliyetine göre seç.
 
 ## Pilot ve ürünleştirme: saha verisi ve gereksinim bekliyor
 
