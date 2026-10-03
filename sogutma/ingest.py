@@ -425,10 +425,10 @@ _TS_FORMATS = [
     "%d-%m-%Y %H:%M",
     "%Y-%m-%d",
 ]
+_TZ_OFFSET_SUFFIX = re.compile(r"(?:Z|[+-]\d{2}:?\d{2})$", re.IGNORECASE)
 
 
-def _parse_time(s):
-    s = s.astype(str).str.strip()
+def _parse_naive_time(s):
     best = None
     for fmt in _TS_FORMATS:  # hızlı yol: tek biçimle %99+ çözülüyorsa onu kullan
         t = pd.to_datetime(s, format=fmt, errors="coerce")
@@ -442,6 +442,25 @@ def _parse_time(s):
     except (ValueError, TypeError, AttributeError):
         return best
     return t if t.notna().sum() >= best.notna().sum() else best
+
+
+def _parse_time(s):
+    s = s.astype(str).str.strip()
+    has_offset = s.str.contains(_TZ_OFFSET_SUFFIX)
+    if not has_offset.any():
+        return _parse_naive_time(s)
+
+    # ISO year-first timestamps with an explicit offset must not pass through
+    # dayfirst=True: pandas can otherwise reinterpret YYYY-MM-DD as YYYY-DD-MM.
+    out = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+    aware = pd.to_datetime(
+        s.loc[has_offset], errors="coerce", format="mixed", utc=True, dayfirst=False
+    ).dt.tz_localize(None)
+    out.loc[has_offset] = aware.to_numpy(dtype="datetime64[ns]")
+    if (~has_offset).any():
+        naive = _parse_naive_time(s.loc[~has_offset])
+        out.loc[~has_offset] = naive.to_numpy(dtype="datetime64[ns]")
+    return out
 
 
 def _check_range(vals, col, report, errors, *, allow_sensor_faults=False):

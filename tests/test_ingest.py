@@ -50,10 +50,14 @@ def test_turkish_excel_example_parses():
 
 def test_timezone_offsets_are_normalized_to_utc():
     raw = _healthy(2)[["timestamp", "t_amb", "t_room", "p_suc", "p_dis", "i_comp"]].copy()
-    expected = raw["timestamp"].min() - pd.Timedelta(hours=3)
+    expected = (
+        raw["timestamp"].dt.tz_localize("Europe/Istanbul")
+        .dt.tz_convert("UTC")
+        .dt.tz_localize(None)
+    )
     raw["timestamp"] = raw["timestamp"].dt.tz_localize("Europe/Istanbul").map(lambda t: t.isoformat())
     got = load_csv(_csv(raw))
-    assert got["timestamp"].min() == expected
+    assert got["timestamp"].tolist() == expected.tolist()
 
 
 def test_matches_simulator_values():
