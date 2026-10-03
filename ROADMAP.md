@@ -17,7 +17,8 @@ Durum: çalışan demo prototipi. Tamamlandı işaretleri depodaki kod ve testle
 
 - [x] Sabit sensör kalite eşiklerini ek sentetik profil/tohumlarda ölç; sonuçları saha eşiği veya saha performansı olarak sunma.
 - [x] Temel sentetik testte sınıf Brier/log-loss, koşullu ETA hatası ve ±8 °C sabit ortam kayması stres metriği üret.
-- [ ] ETA belirsizliği ve olasılık kalibrasyonunu ünite bazında ayrılmış doğrulama verisinde değerlendir.
+- [x] Ayrılmış sentetik test ünitelerinde ham sınıf olasılıklarını reliability binleriyle, Brier/log-loss ve ETA MAE'yi ünite-kümeli bootstrap ile değerlendir.
+- [ ] Ayrı calibration üniteleri olmadan kalibratör veya ETA tahmin aralığı fit etme; böyle bir aralık için eğitim/test ünitelerinden bağımsız calibration kümesi oluştur.
 - [ ] Eşzamanlı ekipman arızası (mevcut sensör + ekipman arızası birlikte test edilir), uzun dönem mevsimsellik ve sıcak hava dalgası senaryolarını değerlendir.
 - [x] MQTT v1 telemetri sözleşmesi için saf doğrulama/kanonik alan adaptörü ekle; broker, yeniden bağlantı ve kalıcı alım kapsam dışı.
 - [ ] MQTT üretici/abone prototipi; zaman, birim, eksik değer ve yeniden bağlantı davranışını broker ile test et.
