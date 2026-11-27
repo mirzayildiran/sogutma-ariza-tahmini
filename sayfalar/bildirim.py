@@ -28,7 +28,7 @@ from sogutma.faults import fault_name
 from sogutma.simulator import START
 from sogutma.ui import STATUS_STYLE, fmt_time, load_demo, root
 
-DOKUMAN = "https://github.com/mirzayildiran/sogutma-ariza-tahmini/blob/main/docs/bildirimler.md"
+DOKUMAN = "https://github.com/mirzayildiran/sogutma-ariza-tahmini/blob/main/docs/notifications.md"
 
 # Ayar formunun oturum anahtarları ve başlangıç değerleri (sogutma.bildirim.Kurallar varsayılanlarıyla uyumlu)
 VARSAYILAN = {
@@ -162,7 +162,7 @@ def ayar_olustur():
     s = st.session_state
     d = {
         "_aciklama": "Bildirim ayarı (panelde oluşturuldu). Parola, token ve sır BURAYA YAZILMAZ; "
-        "ortam değişkenleriyle verilir (docs/bildirimler.md).",
+        "ortam değişkenleriyle verilir (docs/notifications.md).",
         "deneme_modu": True,
         "bildirilen_durumlar": [x for x in ("İzlemede", "Kritik") if x in s["bd_durumlar"]],
         "iyilesme_bildir": bool(s["bd_iyilesme"]),

@@ -1,50 +1,54 @@
-# REST API ve Docker
+# REST API and Docker
 
-Panelin ve `predict.py`'nin kullandığı analiz akışı (CSV okuma/doğrulama → saatlik öznitelikler → model),
-bir HTTP servisi olarak da sunulur. Böylece bir IoT ağ geçidi, bakım yazılımı ya da başka bir sistem
-ölçümleri gönderip ünite başına sağlık skoru, olası arıza ve kalan süreyi alabilir.
+The analysis pipeline used by the dashboard and `predict.py` (CSV reading/validation → hourly features → model) is
+also served as an HTTP service. An IoT gateway, maintenance software or any other system can send measurements and
+receive the health score, likely fault and time to failure for each unit.
 
 > [!IMPORTANT]
-> Model **sentetik (simülatör) veriyle** eğitildi; gerçek saha doğruluğu doğrulanmamıştır. API her yanıtta bunu
-> `sentetik_uyari` alanıyla belirtir. Çıktı ön göstergedir; basınç şalteri, alarm cihazı ya da resmî sıcaklık
-> kaydı yerine geçmez. Servis durum tutmaz (veritabanı yoktur): her çağrıda analiz edilecek veriyi gönderirsiniz.
+> The model was trained on **synthetic (simulator) data**; real field accuracy has not been validated. The API states
+> this in every response with the `sentetik_uyari` (synthetic warning) field. The output is an early indicator; it does
+> not replace a pressure switch, an alarm device or an official temperature record. The service is stateless (there is
+> no database): you send the data to be analyzed with every call.
 
-## İçindekiler
+> [!NOTE]
+> Endpoint paths, JSON field names and error messages are in Turkish. Their meanings are given in this document.
 
-1. [Çalıştırma](#1-çalıştırma)
-2. [Uç noktalar](#2-uç-noktalar)
-3. [Kimlik doğrulama](#3-kimlik-doğrulama)
-4. [Hatalar](#4-hatalar)
-5. [Docker ve docker compose](#5-docker-ve-docker-compose)
-6. [Ağ geçidinden saatlik veri gönderme](#6-ağ-geçidinden-saatlik-veri-gönderme)
-7. [Sınırlar ve güvenlik notları](#7-sınırlar-ve-güvenlik-notları)
+## Contents
 
-## 1. Çalıştırma
+1. [Running](#1-running)
+2. [Endpoints](#2-endpoints)
+3. [Authentication](#3-authentication)
+4. [Errors](#4-errors)
+5. [Docker and docker compose](#5-docker-and-docker-compose)
+6. [Sending hourly data from a gateway](#6-sending-hourly-data-from-a-gateway)
+7. [Limits and security notes](#7-limits-and-security-notes)
+
+## 1. Running
 
 ```bash
-pip install -r requirements-api.txt     # panel bağımlılıklarını da içerir
-python train.py                          # bir kez: modeli eğitir (models/predictor.joblib)
-uvicorn api:app --port 8000              # yalnızca bu makineden erişim
-# ağdaki diğer cihazlara açmak için: --host 0.0.0.0 (önce API anahtarı belirleyin, bkz. §3)
+pip install -r requirements-api.txt     # also includes the dashboard dependencies
+python train.py                          # once: trains the model (models/predictor.joblib)
+uvicorn api:app --port 8000              # access from this machine only
+# to expose it to other devices on the network: --host 0.0.0.0 (set an API key first, see §3)
 ```
 
-Etkileşimli belgeler (OpenAPI): <http://localhost:8000/docs>. Model dosyası değiştiğinde (ör. `python train.py`
-yeniden çalıştırıldığında) servis yeniden başlatmaya gerek kalmadan yeni modeli yükler.
+Interactive docs (OpenAPI): <http://localhost:8000/docs>. When the model file changes (e.g. when `python train.py`
+is run again), the service loads the new model without a restart.
 
-| Ortam değişkeni | Anlamı | Varsayılan |
+| Environment variable | Meaning | Default |
 |---|---|---|
-| `SOGUTMA_ROOT` | `models/` ve `data/` klasörlerinin üst dizini (panel de aynısını kullanır) | depo kökü |
-| `SOGUTMA_API_ANAHTARI` | Ayarlıysa `/saglik` dışındaki uçlar `X-API-Anahtari` başlığı ister | ayarsız (açık, başlangıçta uyarı yazar) |
-| `SOGUTMA_MAKS_YUKLEME_MB` | İstek gövdesi üst sınırı (MB) | 20 |
+| `SOGUTMA_ROOT` | Parent directory of the `models/` and `data/` folders (the dashboard uses the same one) | repository root |
+| `SOGUTMA_API_ANAHTARI` | If set, all endpoints except `/saglik` require the `X-API-Anahtari` header | unset (open; a warning is logged at startup) |
+| `SOGUTMA_MAKS_YUKLEME_MB` | Request body limit (MB) | 20 |
 
-## 2. Uç noktalar
+## 2. Endpoints
 
-| Yöntem | Yol | Amaç |
+| Method | Path | Purpose |
 |---|---|---|
-| GET | `/saglik` | Canlılık: model yüklü mü, model sürümü, çalışma süresi. Kimlik doğrulama gerekmez. Model kullanılamıyorsa **503**. |
-| GET | `/model` | Model sürümü, arıza türleri, ekipman tipleri ve `models/metrics.json` özeti (**sentetik** ölçümler). |
-| POST | `/tahmin/csv` | CSV dosyası yükle (`multipart/form-data`, alan adı `dosya`) → tahmin. |
-| POST | `/tahmin/olcumler` | JSON ölçüm listesi gönder → tahmin. |
+| GET | `/saglik` (health) | Liveness: is the model loaded, model version, uptime. No authentication required. **503** if the model is unavailable. |
+| GET | `/model` | Model version, fault types, equipment types and a summary of `models/metrics.json` (**synthetic** measurements). |
+| POST | `/tahmin/csv` (predict from CSV) | Upload a CSV file (`multipart/form-data`, field name `dosya`) → prediction. |
+| POST | `/tahmin/olcumler` (predict from measurements) | Send a JSON list of measurements → prediction. |
 
 ### GET /saglik
 
@@ -55,45 +59,50 @@ curl http://localhost:8000/saglik
 {"durum": "ok", "model_yuklu": true, "model_surumu": 2, "calisma_suresi_sn": 3.4, "kimlik_dogrulama": false}
 ```
 
-Model yoksa ya da eskiyse HTTP 503 döner ve `durum` alanı `model_yok`, `model_eski` ya da `model_okunamadi` olur.
+(`durum` = status, `model_yuklu` = model loaded, `model_surumu` = model version, `calisma_suresi_sn` = uptime in
+seconds, `kimlik_dogrulama` = authentication enabled.)
+
+If the model is missing or outdated, HTTP 503 is returned and `durum` is `model_yok` (no model), `model_eski`
+(outdated model) or `model_okunamadi` (model unreadable).
 
 ### GET /model
 
 ```bash
 curl http://localhost:8000/model
 ```
-Yanıtın `sentetik: true` alanı ve `uyari` metni her zaman bulunur. `metrikler` içinde saatlik doğruluk,
-makro F1, arıza öncesi yakalama oranı, medyan erken uyarı süresi (gün), yanlış alarm veren ünite sayısı ve
-ekipman tipine göre dökümü yer alır; hepsi sentetik test filosundan gelir. Ayrıca `multiclass_brier` ve `log_loss`
-ham, **kalibre edilmemiş** sınıf olasılıklarını ölçer. `eta_mae_saat` ve `eta_p90_mutlak_hata_saat`, `pred_fault` arıza dışı
-sınıf olup gerçek arızaya kalan süre pozitif olan test saatlerinin koşullu ETA hatalarıdır; doğru arıza türünün tahmin edilmesini
-şart koşmaz. `eta_dogru_tur_mae_saat` ve `eta_dogru_tur_p90_mutlak_hata_saat` yalnızca tür tahmini gerçek etiketle
-eşleştiğinde hesaplanır. Ardışık saatler bağımsız örnekler değildir. Bu sentetik metrikler saha performansı ya da
-olasılık kalibrasyonu kanıtı değildir. `ortam_kaymasi_stresi`, aynı sentetik test filosuna −8 °C ve
-+8 °C sabit dış ortam ofseti uygulanan stres kontrolünü verir; gerçek mevsim veya saha testi değildir.
-Eğitim çıktısı `models/metrics.json` ayrıca sınıf-bazlı 10-bin reliability tablosu ve Brier/log-loss/ETA MAE için
-ünite-kümeli bootstrap aralıkları içerir. `/model` özeti bu ayrıntı tablolarını döndürmez; bootstrap aralıkları tek
-bir ETA tahmini için güven/tahmin aralığı değildir.
+The response always contains a `sentetik: true` field and an `uyari` (warning) text. `metrikler` (metrics) contains
+hourly accuracy, macro F1, the share of faults caught before failure, the median early-warning lead time (days), the
+number of units with a false alarm and a breakdown by equipment type; all of it comes from the synthetic test fleet.
+In addition, `multiclass_brier` and `log_loss` measure the raw, **uncalibrated** class probabilities. `eta_mae_saat`
+and `eta_p90_mutlak_hata_saat` are the conditional ETA errors (in hours) for test hours where `pred_fault` is a
+non-normal class and the true time to failure is positive; they do not require the correct fault type to be predicted.
+`eta_dogru_tur_mae_saat` and `eta_dogru_tur_p90_mutlak_hata_saat` are computed only when the type prediction matches the
+true label. Consecutive hours are not independent samples. These synthetic metrics are not evidence of field
+performance or probability calibration. `ortam_kaymasi_stresi` (ambient-shift stress) gives the stress check in which a
+constant ambient offset of −8 °C and +8 °C is applied to the same synthetic test fleet; it is not a real seasonal or
+field test. The training output `models/metrics.json` also contains a per-class 10-bin reliability table and
+unit-clustered bootstrap intervals for Brier/log-loss/ETA MAE. The `/model` summary does not return these detailed tables;
+the bootstrap intervals are not a confidence/prediction interval for a single ETA estimate.
 
 ### POST /tahmin/csv
 
-CSV biçimi [Veri formatı](veri-formati.md) belgesindeki ile aynıdır (Türkçe Excel çıktıları dahil).
+The CSV format is the same as in the [Data format](data-format.md) document (Turkish Excel exports included).
 
 ```bash
 curl -F dosya=@examples/ornek_veri.csv "http://localhost:8000/tahmin/csv"
-curl -F dosya=@dondurucu.csv "http://localhost:8000/tahmin/csv?tip=dondurucu&setpoint=-20&saatlik=true"
+curl -F dosya=@freezer.csv "http://localhost:8000/tahmin/csv?tip=dondurucu&setpoint=-20&saatlik=true"
 ```
 
-Sorgu parametreleri:
+Query parameters:
 
-| Parametre | Anlamı |
+| Parameter | Meaning |
 |---|---|
-| `setpoint` | CSV'de set sütunu yoksa termostat set değeri (°C); verilmezse oda sıcaklığı medyanı |
-| `gauge` | `true` ise basınçlar efektif (gauge) kabul edilir, +1,013 bar ile mutlağa çevrilir |
-| `tip` | CSV'de `tip` sütunu yoksa ekipman tipi: `soguk_oda` (varsayılan), `dondurucu`, `market_dolabi` |
-| `saatlik` | `true` ise saatlik tahmin serisi de döner |
+| `setpoint` | Thermostat setpoint (°C) if the CSV has no setpoint column; if omitted, the median room temperature |
+| `gauge` | If `true`, pressures are treated as gauge pressures and converted to absolute by adding 1.013 bar |
+| `tip` | Equipment type if the CSV has no `tip` column: `soguk_oda` (cold room, default), `dondurucu` (freezer), `market_dolabi` (display cabinet) |
+| `saatlik` | If `true`, the hourly prediction series is returned as well |
 
-Yanıt (kısaltılmış; örnek CSV):
+Response (abbreviated; sample CSV):
 
 ```json
 {
@@ -136,44 +145,54 @@ Yanıt (kısaltılmış; örnek CSV):
 }
 ```
 
-Alanlar:
+Fields:
 
-- `durum`: `Normal`, `İzlemede` ya da `Kritik`; `saglik` 0–100 skorudur.
-- `ariza` / `ariza_adi`: tahmini arıza kodu ve Türkçe adı (`normal` dahil). `guven` 0–1.
-- `kalan_saat`: arızaya kalan süre, kaba tahmin; `durum` Normal ise `null`.
-- `sapmalar`: aynı tipteki normal çalışmaya göre en çok sapan sinyaller (açıklama); `sapma_sigma` işaretli z-skorudur.
-- `uyari_baslangic` / `uyari_saat`: sondan geriye doğru kesintisiz Normal dışı süre (0 ise uyarı yok).
-- `sensor_sorunu` / `sensor_notu`: son saatte sensör sorunu varsa ayrı bir uyarı; ekipman arızası teşhisinden bağımsızdır.
-- `sensor_sorunlari`: analiz aralığı boyunca sensör ve neden kodu bazında özet (`sensor`, `neden`, `ilk`, `son`, `saat`).
-- Sensör denetimi sezgisel ve simülatör koşullarına göre ayarlıdır; saha alarmı olarak doğrulanmamıştır. Eşikler için
-  [Veri formatı](veri-formati.md#51-sensör-sağlığı-veri-kalitesi-kontrolleri) sınırlarına bakın.
-- `rapor`: veri kontrol raporu. `uyarilar` düzeltilen/atılan veriyi, `turetilen` varsayılan/türetilen alanları,
-  `eksik_sensorler` ve `hesaplanamayan_oznitelikler` doğruluğu düşüren eksikleri bildirir. Gerçek veride mutlaka okuyun.
-- `saatlik` (yalnızca `saatlik=true`): her ünite ve saat için tahmine ek olarak `sensor_sorunu` ve `sensor_notu` alanları.
-- API'de zaman damgaları UTC'dir. Saat dilimsiz değer UTC kabul edilir; offset içeren JSON zamanları UTC'ye çevrilir.
-  Tek JSON isteğinde saat dilimli ve saat dilimsiz değerleri karıştırmayın. Saatlik/ünite yanıtı UTC-naif ISO biçimindedir.
-  CSV ve CLI dosyalarında da saat dilimsiz zaman UTC kabul edilir; yerel saatten gönderiyorsanız açık UTC offset'i ekleyin.
+- `uniteler`: one entry per unit. `zaman` = time of the latest hour, `saat_sayisi` = number of hours analyzed.
+- `durum` (state): `Normal`, `İzlemede` (Watch) or `Kritik` (Critical); `saglik` (health) is the 0–100 score.
+- `ariza` / `ariza_adi`: predicted fault code and its Turkish name (including `normal`). `guven` (confidence) is 0–1.
+  `olasiliklar` holds the probability of each class.
+- `kalan_saat`: hours left until failure, a rough estimate; `null` if `durum` is Normal.
+- `sapmalar` (deviations): the signals that deviate most from normal operation of the same type (explanation);
+  `sapma_sigma` is a signed z-score. `sinyal` = signal, `deger` = value, `normal` = normal value.
+- `oneri`: maintenance recommendation (Turkish text).
+- `uyari_baslangic` / `uyari_saat`: start and length of the uninterrupted non-Normal period counting back from the end
+  (0 means no warning).
+- `sensor_sorunu` / `sensor_notu`: a separate warning if there is a sensor issue in the last hour; independent of the
+  equipment-fault diagnosis.
+- `sensor_sorunlari`: summary over the analysis range by sensor and reason code (`sensor`, `neden` = reason,
+  `ilk` = first, `son` = last, `saat` = hours).
+- The sensor check is heuristic and tuned to simulator conditions; it has not been validated as a field alarm. For the
+  thresholds, see the limits in [Data format](data-format.md#51-sensor-health-data-quality-checks).
+- `rapor` (report): the data-check report. `bilgiler` = info messages, `uyarilar` reports corrected/dropped data,
+  `turetilen` assumed/derived fields, and `eksik_sensorler` (missing sensors) and `hesaplanamayan_oznitelikler`
+  (features that could not be computed) report gaps that reduce accuracy. Always read it with real data.
+- `saatlik` (only with `saatlik=true`): for each unit and hour, the prediction plus the `sensor_sorunu` and
+  `sensor_notu` fields.
+- Timestamps in the API are UTC. A value without a time zone is treated as UTC; JSON times with an offset are converted
+  to UTC. Do not mix values with and without a time zone in a single JSON request. The hourly/unit response uses
+  UTC-naive ISO format. In CSV and CLI files, too, a time without a time zone is treated as UTC; if you send local time,
+  add an explicit UTC offset.
 
 ### POST /tahmin/olcumler
 
-Bir ağ geçidi son ölçümleri JSON olarak gönderir. Yanıt biçimi `/tahmin/csv` ile aynıdır.
+A gateway sends its latest measurements as JSON. The response format is the same as `/tahmin/csv`.
 
-Her kayıt, CSV şemasının kanonik alanlarını taşır: `timestamp`, `t_amb`, `t_room`, `p_suc`, `p_dis`, `i_comp`
-zorunludur (sensör okunamadıysa değer `null` olabilir, ama alan bulunmalıdır); `unit_id`, `tip`, `t_coil`, `sh`,
-`sc`, `t_suc`, `t_liq`, `i_fan`, `vib`, `t_dis`, `comp_on`, `defrost`, `door_open`, `setpoint` isteğe bağlıdır.
-Birimler ve eksik alanların etkisi için [Veri formatı](veri-formati.md). `setpoint`, `gauge`, `tip` ve `saatlik`
-istek gövdesinde üst düzey alanlardır.
+Each record carries the canonical fields of the CSV schema: `timestamp`, `t_amb`, `t_room`, `p_suc`, `p_dis` and
+`i_comp` are required (the value may be `null` if the sensor could not be read, but the field must be present);
+`unit_id`, `tip`, `t_coil`, `sh`, `sc`, `t_suc`, `t_liq`, `i_fan`, `vib`, `t_dis`, `comp_on`, `defrost`, `door_open`
+and `setpoint` are optional. For units and the effect of missing fields, see [Data format](data-format.md).
+`setpoint`, `gauge`, `tip` and `saatlik` are top-level fields in the request body; the measurements go in `olcumler`.
 
-**En az bir gün (24 saat) geçerli veri** gerekir (ünite başına); güvenilir sonuç için 3+ gün önerilir. Bir istekte en fazla
-500 ünite, ünite başına 366 gün ve hizalanmış toplam 1.000.000 beş dakikalık nokta kabul edilir. Servis
-durum tutmadığından her çağrıda bu pencerenin tamamını gönderin (5 dakikalık örneklemde ünite başına gün başına
-288 kayıt). JSON ucu ayrıca en fazla 200.000 ham ölçüm kaydı kabul eder; her iki uçtaki HTTP gövdesi varsayılan
-20 MB ile sınırlıdır (`SOGUTMA_MAKS_YUKLEME_MB`).
+**At least one day (24 hours) of valid data** is required (per unit); 3+ days is recommended for reliable results. A
+request accepts at most 500 units, 366 days per unit and 1,000,000 aligned five-minute points in total. Because the
+service is stateless, send the whole window with every call (288 records per unit per day at 5-minute sampling). The
+JSON endpoint also accepts at most 200,000 raw measurement records; the HTTP body on both endpoints is limited to
+20 MB by default (`SOGUTMA_MAKS_YUKLEME_MB`).
 
 ```bash
 curl -X POST http://localhost:8000/tahmin/olcumler \
   -H "Content-Type: application/json" \
-  -d @istek.json
+  -d @request.json
 ```
 ```json
 {
@@ -190,13 +209,14 @@ curl -X POST http://localhost:8000/tahmin/olcumler \
   ]
 }
 ```
-(Gerçek istekte en az 24 saatlik kayıt bulunmalıdır; yukarıdaki iki kayıt biçimi göstermek içindir ve
-**422** döner.)
+(A real request must contain at least 24 hours of records; the two records above only illustrate the format and return
+**422**.)
 
-## 3. Kimlik doğrulama
+## 3. Authentication
 
-`SOGUTMA_API_ANAHTARI` ortam değişkeni ayarlıysa `/saglik` dışındaki tüm uçlar `X-API-Anahtari` başlığı ister
-(eksik ya da yanlışsa **401**). Anahtar kodda ya da depoda tutulmaz; ortam değişkeniyle verilir:
+If the `SOGUTMA_API_ANAHTARI` environment variable is set, all endpoints except `/saglik` require the `X-API-Anahtari`
+(API key) header (**401** if it is missing or wrong). The key is not stored in the code or the repository; it is
+provided through the environment variable:
 
 ```bash
 export SOGUTMA_API_ANAHTARI="$(openssl rand -hex 24)"
@@ -204,70 +224,75 @@ uvicorn api:app --port 8000
 curl -H "X-API-Anahtari: $SOGUTMA_API_ANAHTARI" http://localhost:8000/model
 ```
 
-Ayarlı değilse API herkese açıktır ve başlangıçta günlüğe uyarı yazılır. Ağa açılacak her kurulumda anahtar
-belirleyin ve servisin önüne TLS sonlandıran bir ters vekil (nginx, Caddy, bulut yük dengeleyici) koyun;
-API kendisi HTTPS sunmaz.
+If it is not set, the API is open to everyone and a warning is logged at startup. Set a key on every installation that
+will be exposed to a network, and put a TLS-terminating reverse proxy (nginx, Caddy, a cloud load balancer) in front of
+the service; the API itself does not serve HTTPS.
 
-## 4. Hatalar
+## 4. Errors
 
-Hata yanıtları tek biçimdedir:
+Error responses have a single format:
 
 ```json
 {"hata": "veri_gecersiz", "mesaj": "Veri kullanılamıyor; ayrıntılar için 'ayrintilar' alanına bakın.",
  "ayrintilar": ["Zorunlu sütun(lar) eksik: t_amb (Dış ortam sıcaklığı) — kabul edilen adlar: ..."]}
 ```
 
-| Kod | `hata` | Ne zaman |
+(`hata` = error code, `mesaj` = message, `ayrintilar` = details. The example says: "Data cannot be used; see the
+'ayrintilar' field for details" and "Required column(s) missing: t_amb (ambient temperature) — accepted names: ...".)
+
+| Code | `hata` | When |
 |---|---|---|
-| 401 | `yetkisiz` | API anahtarı eksik ya da yanlış |
-| 413 | `cok_buyuk` | İstek ya da dosya üst sınırı aşıyor (varsayılan 20 MB) |
-| 422 | `veri_gecersiz` | Veri ingest doğrulamasından geçmedi (zorunlu sütun yok, okunamayan zaman damgası, bilinmeyen `tip`, ünite başına 24 saatten az veri, ...) |
-| 422 | `yetersiz_veri` | Dosya geçerli ama saatlik öznitelik üretmek için çok kısa ya da çok boşluklu |
-| 422 | `istek_gecersiz` | İstek gövdesi/parametreleri geçersiz (ör. `olcumler[3].t_room: sayı bekleniyor`) |
-| 503 | `model_yok`, `model_eski`, `model_okunamadi` | Model dosyası yok, eski sürümde ya da okunamıyor: `python train.py` çalıştırın |
-| 500 | `sunucu_hatasi` | Beklenmeyen hata; ayrıntı yalnızca sunucu günlüğündedir |
+| 401 | `yetkisiz` (unauthorized) | API key missing or wrong |
+| 413 | `cok_buyuk` (too large) | The request or file exceeds the limit (20 MB by default) |
+| 422 | `veri_gecersiz` (invalid data) | The data failed ingest validation (required column missing, unreadable timestamp, unknown `tip`, less than 24 hours of data per unit, ...) |
+| 422 | `yetersiz_veri` (insufficient data) | The file is valid but too short or too gappy to produce hourly features |
+| 422 | `istek_gecersiz` (invalid request) | The request body/parameters are invalid (e.g. `olcumler[3].t_room: sayı bekleniyor`, "number expected") |
+| 503 | `model_yok`, `model_eski`, `model_okunamadi` | The model file is missing, outdated or unreadable: run `python train.py` |
+| 500 | `sunucu_hatasi` (server error) | Unexpected error; details are only in the server log |
 
-## 5. Docker ve docker compose
+## 5. Docker and docker compose
 
-Depoda tek bir `Dockerfile` ve iki servisli `docker-compose.yml` vardır:
+The repository has a single `Dockerfile` and a `docker-compose.yml` with two services:
 
-| Servis | Komut | Port | Sağlık denetimi |
+| Service | Command | Port | Health check |
 |---|---|---|---|
 | `api` | `uvicorn api:app` | 8000 | `GET /saglik` |
-| `panel` | `streamlit run app.py` | 8501 | `GET /_stcore/health` |
+| `panel` (dashboard) | `streamlit run app.py` | 8501 | `GET /_stcore/health` |
 
 ```bash
-docker compose up --build                     # panel: http://localhost:8501   API: http://localhost:8000/docs
-SOGUTMA_API_ANAHTARI="$(openssl rand -hex 24)" docker compose up -d --build   # anahtarla
-docker compose ps                             # sağlık durumu
-docker compose down                           # durdur (birimler kalır)
-docker compose down -v                        # birimleri de sil (modeli imajdakine sıfırlar)
+docker compose up --build                     # dashboard: http://localhost:8501   API: http://localhost:8000/docs
+SOGUTMA_API_ANAHTARI="$(openssl rand -hex 24)" docker compose up -d --build   # with a key
+docker compose ps                             # health status
+docker compose down                           # stop (volumes are kept)
+docker compose down -v                        # also delete the volumes (resets the model to the one in the image)
 ```
 
-Tasarım kararları:
+Design decisions:
 
-- **Model imaj derlenirken eğitilir** (`RUN python train.py`, sentetik veri): imaj kendi kendine yeterlidir,
-  ilk istek eğitim beklemez, ilk açılışta internet gerekmez. Bedeli daha uzun derleme süresidir.
-  Model sürümü değişirse (`MODEL_VERSION`) `docker compose build` ile imajı yenileyin.
-- İmaj **root olmayan** kullanıcıyla (`app`, uid 10001) çalışır; pip önbelleği imaja alınmaz.
-- İki servis aynı imajı kullanır ve `veri` (`/app/data`) ile `modeller` (`/app/models`) isimli birimlerini
-  paylaşır. Birimler ilk kullanımda imajdaki içerikle dolar. Panel modeli yeniden eğitirse API, yeniden
-  başlatmadan yeni modeli yükler. İmaj güncellendikten sonra eski birimler eski modeli tutar: API 503 verirse
-  `docker compose down -v` ile birimleri sıfırlayın.
-- Portlar yalnızca `127.0.0.1`'e bağlanır. Ağa açmak için `docker-compose.yml`'de önekleri kaldırın ve
-  mutlaka `SOGUTMA_API_ANAHTARI` verin; panelin kendisi kimlik doğrulama içermez.
-- Sağlık denetimleri `curl` gerektirmez (slim imajda yoktur), Python ile yapılır.
+- **The model is trained while the image is built** (`RUN python train.py`, synthetic data): the image is
+  self-contained, the first request does not wait for training, and no internet access is needed on first start.
+  The cost is a longer build. If the model version changes (`MODEL_VERSION`), rebuild the image with
+  `docker compose build`.
+- The image runs as a **non-root** user (`app`, uid 10001); the pip cache is not included in the image.
+- Both services use the same image and share the named volumes `veri` (data, `/app/data`) and `modeller` (models,
+  `/app/models`). The volumes are filled with the image's contents on first use. If the dashboard retrains the model,
+  the API loads the new model without a restart. After the image is updated, old volumes keep the old model: if the
+  API returns 503, reset the volumes with `docker compose down -v`.
+- Ports are bound to `127.0.0.1` only. To expose them to the network, remove the prefixes in `docker-compose.yml` and
+  always set `SOGUTMA_API_ANAHTARI`; the dashboard itself has no authentication.
+- The health checks do not need `curl` (it is not in the slim image); they use Python.
 
-## 6. Ağ geçidinden saatlik veri gönderme
+## 6. Sending hourly data from a gateway
 
-Depoda `sogutma/mqtt_contract.py` MQTT v1 `telemetry` mesajını doğrular; `sogutma/mqtt_store.py` bu doğrulanmış
-tam zarfı yerel SQLite staging deposuna yazar ve tek site/ünite için zaman penceresi satırlarını okur.
-`normalize_telemetry(topic, payload)` tek bir 300 saniyelik mesajı `/tahmin/olcumler` satırına eşler ve REST'te
-bulunmayan provenance alanlarını korur. Broker istemcisi, reconnect, gateway spool ve üretim depolaması uygulanmamıştır.
-Sözleşme, çakışma ve eksik aralık davranışı için [Saha mimarisi, MQTT v1](saha-mimarisi.md#6-mqtt-konu-yapısı-ve-veri-biçimi)
-belgesine bakın.
+In the repository, `sogutma/mqtt_contract.py` validates the MQTT v1 `telemetry` message; `sogutma/mqtt_store.py` writes
+the validated full envelope to a local SQLite staging store and reads time-window rows for a single site/unit.
+`normalize_telemetry(topic, payload)` maps a single 300-second message to a `/tahmin/olcumler` row and keeps the
+provenance fields that the REST API does not have. A broker client, reconnection, gateway spooling and production storage
+are not implemented. For the contract, conflict and missing-range behavior, see
+[Field architecture, MQTT v1](field-architecture.md#6-mqtt-topic-structure-and-data-format).
 
-Yerel consumer, doğrulama ve staging'i ayrı ayrı şu şekilde kullanabilir (broker callback'i bu prototipe dahil değildir):
+A local consumer can use validation and staging separately as follows (a broker callback is not part of this
+prototype):
 
 ```python
 from datetime import datetime, timezone
@@ -276,7 +301,7 @@ from sogutma.mqtt_store import SQLiteTelemetryStore
 
 with SQLiteTelemetryStore("data/telemetry.sqlite3") as store:
     sample = normalize_telemetry(topic, payload_bytes)
-    store.insert(sample)  # QoS 1 tekrarında "duplicate" döner; aynı anahtardaki farklı içerik hata verir
+    store.insert(sample)  # returns "duplicate" on a QoS 1 redelivery; different content under the same key raises an error
     rows = store.api_rows(
         "S001", "A1",
         datetime(2026, 10, 2, 9, tzinfo=timezone.utc),
@@ -284,61 +309,61 @@ with SQLiteTelemetryStore("data/telemetry.sqlite3") as store:
     )
 ```
 
-`rows` tek bir site/üniteye aittir; `{"olcumler": rows}` olarak POST edilebilir. API en az 24 saat geçerli veri
-aramaya devam eder. Uzun eksikler sentetik satırla doldurulmaz; API ingest raporu eksikleri değerlendirir.
+`rows` belongs to a single site/unit; it can be POSTed as `{"olcumler": rows}`. The API still requires at least 24 hours
+of valid data. Long gaps are not filled with synthetic rows; the API ingest report evaluates the gaps.
 
-Ağ geçidi (ya da yerel bir betik) her saat son 3 günün 5 dakikalık ölçümlerini gönderir ve yanıttaki
-uyarıya göre hareket eder. Aşağıdaki örnek yalnızca standart kütüphane kullanır; `son_olcumler()` sizin
-depolama katmanınızdan (SQLite, InfluxDB, ...) kayıtları okuyan, **sizin yazmanız gereken** bir işlevdir.
+Every hour, the gateway (or a local script) sends the last 3 days of 5-minute measurements and acts on the warning in
+the response. The example below uses only the standard library; `latest_measurements()` is a function **you need to
+write** that reads records from your storage layer (SQLite, InfluxDB, ...).
 
 ```python
-"""saatlik_gonder.py: son 3 günün ölçümlerini API'ye gönderir (cron: 5 * * * *)."""
+"""send_hourly.py: sends the last 3 days of measurements to the API (cron: 5 * * * *)."""
 import json
 import os
 import urllib.error
 import urllib.request
 
 API = os.environ.get("SOGUTMA_API_ADRESI", "http://localhost:8000")
-ANAHTAR = os.environ.get("SOGUTMA_API_ANAHTARI", "")
+API_KEY = os.environ.get("SOGUTMA_API_ANAHTARI", "")
 
 
-def son_olcumler(gun=3):
+def latest_measurements(days=3):
     """[{"timestamp": "2026-01-05T14:35:00", "unit_id": "D1", "t_amb": ..., "t_room": ..., ...}, ...]"""
-    raise NotImplementedError("Kendi veri kaynağınızdan okuyun")
+    raise NotImplementedError("Read from your own data source")
 
 
-def tahmin_al(olcumler, tip="soguk_oda"):
-    govde = json.dumps({"olcumler": olcumler, "tip": tip}).encode("utf-8")
-    istek = urllib.request.Request(
+def get_prediction(measurements, equipment_type="soguk_oda"):
+    body = json.dumps({"olcumler": measurements, "tip": equipment_type}).encode("utf-8")
+    request = urllib.request.Request(
         f"{API}/tahmin/olcumler",
-        data=govde,
-        headers={"Content-Type": "application/json", "X-API-Anahtari": ANAHTAR},
+        data=body,
+        headers={"Content-Type": "application/json", "X-API-Anahtari": API_KEY},
     )
     try:
-        with urllib.request.urlopen(istek, timeout=60) as r:
+        with urllib.request.urlopen(request, timeout=60) as r:
             return json.load(r)
-    except urllib.error.HTTPError as e:  # 4xx/5xx: Türkçe hata gövdesini yazdır
-        raise SystemExit(f"API hatası {e.code}: {e.read().decode('utf-8')}")
+    except urllib.error.HTTPError as e:  # 4xx/5xx: print the error body
+        raise SystemExit(f"API error {e.code}: {e.read().decode('utf-8')}")
 
 
 if __name__ == "__main__":
-    yanit = tahmin_al(son_olcumler())
-    for u in yanit["uniteler"]:
-        print(f"{u['unit_id']}: {u['durum']} (sağlık {u['saglik']:.0f}), {u['ariza_adi']}")
+    response = get_prediction(latest_measurements())
+    for u in response["uniteler"]:
+        print(f"{u['unit_id']}: {u['durum']} (health {u['saglik']:.0f}), {u['ariza_adi']}")
         if u["durum"] != "Normal":
-            print(f"  Öneri: {u['oneri']}")  # burada bildirim gönderebilirsiniz
+            print(f"  Recommendation: {u['oneri']}")  # you can send a notification here
 ```
 
-Bildirim (e-posta / Telegram / webhook) kuralları için [Bildirimler](bildirimler.md) belgesine; ağ geçidi
-ve MQTT tasarımı için [Saha Mimarisi](saha-mimarisi.md) belgesine bakın.
+For notification (email / Telegram / webhook) rules, see [Notifications](notifications.md); for the gateway and MQTT
+design, see [Field Architecture](field-architecture.md).
 
-## 7. Sınırlar ve güvenlik notları
+## 7. Limits and security notes
 
-- Yükleme sınırı Content-Length başlığına ve okunan gövdeye uygulanır; asıl koruma için servisin önüne
-  koyacağınız ters vekilde de bir gövde boyutu sınırı tanımlayın.
-- Servis analizi istek içinde, eşzamanlı çalıştırır; büyük dosyalar (birkaç yüz bin satır) saniyeler sürebilir.
-  Çok sayıda istemci için birden çok işçi süreci çalıştırın (`uvicorn api:app --workers 4`).
-- Model dosyası `joblib` ile okunur (pickle tabanlı): yalnızca kendi eğittiğiniz modelleri `models/`
-  altına koyun, güvenmediğiniz kaynaktan model yüklemeyin.
-- API anahtarı yalnızca basit bir erişim kapısıdır (tek paylaşılan anahtar); çok kiracılı kullanım, kullanıcı
-  başına yetki ve hız sınırı bu sürümde yoktur (README yol haritasındaki "çoklu müşteri desteği" maddesi).
+- The upload limit is applied to the Content-Length header and to the body as it is read; for real protection, also set
+  a body size limit on the reverse proxy you put in front of the service.
+- The service runs the analysis synchronously inside the request; large files (a few hundred thousand rows) can take
+  seconds. For many clients, run several worker processes (`uvicorn api:app --workers 4`).
+- The model file is read with `joblib` (pickle-based): put only models you trained yourself under `models/`, and do not
+  load models from sources you do not trust.
+- The API key is only a simple access gate (a single shared key); multi-tenant use, per-user permissions and rate
+  limiting are not available in this version (the "multi-tenant support" item in the README roadmap).
