@@ -1,8 +1,8 @@
 """Kendi sensör CSV dosyanız için arıza tahmini (panel gerekmez).
 
 Kullanım:  python predict.py veri.csv [--setpoint 2.0] [--tip dondurucu] [--gauge] [-o rapor.csv]
-           [--sensor-kontrolu-kapat] [--bildirim ayarlar.json [--gonder]]   (bildirimler: docs/bildirimler.md)
-Veri biçimi: docs/veri-formati.md
+           [--sensor-kontrolu-kapat] [--bildirim ayarlar.json [--gonder]] (bildirimler: docs/notifications.md)
+Veri biçimi: docs/data-format.md
 """
 
 import argparse
@@ -68,7 +68,7 @@ def summarize(uid, pred, H, model, sorunlar=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Sensör CSV dosyasından soğutma ünitesi arıza tahmini yapar.")
-    ap.add_argument("csv", help="Sensör verisi CSV dosyası (biçim: docs/veri-formati.md)")
+    ap.add_argument("csv", help="Sensör verisi CSV dosyası (biçim: docs/data-format.md)")
     ap.add_argument(
         "--setpoint",
         type=float,
@@ -147,7 +147,7 @@ def main(argv=None):
         analiz = analiz_et(args.csv, model, gauge=args.gauge, setpoint=args.setpoint, tip=args.tip,
                            sensor_kontrolu=not args.sensor_kontrolu_kapat)
     except ValidationError as e:
-        sys.exit(f"Veri dosyası kullanılamıyor:\n{e}\n\nBiçim için: docs/veri-formati.md")
+        sys.exit(f"Veri dosyası kullanılamıyor:\n{e}\n\nBiçim için: docs/data-format.md")
     except YetersizVeri as e:
         sys.exit(str(e))
     raw, rapor = analiz.raw, analiz.rapor

@@ -175,7 +175,7 @@ Sayi = confloat(allow_inf_nan=False)
 
 
 class Olcum(BaseModel):
-    """5 dakikalık tek bir ölçüm. Alanlar CSV şemasıyla aynıdır (docs/veri-formati.md)."""
+    """5 dakikalık tek bir ölçüm. Alanlar CSV şemasıyla aynıdır (docs/data-format.md)."""
 
     timestamp: datetime = Field(
         description="Ölçüm zamanı UTC (ISO 8601, ör. 2026-01-05T14:35:00Z); naif değer de UTC kabul edilir."
@@ -664,7 +664,7 @@ Soğutma ünitelerinin (soğuk oda, dondurucu, market dolabı) sensör verisinde
 **sağlık skorunu** ve **arızaya kalan süreyi** tahmin eden servis. Panelin ve `predict.py`'nin
 kullandığı analiz akışının aynısını çalıştırır.
 
-* `POST /tahmin/csv`: CSV dosyası yükleyin (biçim: `docs/veri-formati.md`).
+* `POST /tahmin/csv`: CSV dosyası yükleyin (biçim: `docs/data-format.md`).
 * `POST /tahmin/olcumler`: Bir ağ geçidi son ölçümleri JSON olarak gönderebilir.
 * `GET /saglik`, `GET /model`: servis ve model durumu.
 
@@ -777,7 +777,7 @@ def create_app() -> FastAPI:
     )
     def tahmin_csv(
         dosya: UploadFile = File(
-            ..., description="Sensör CSV'si (biçim: docs/veri-formati.md). Ünite başına en az 24 saat."
+            ..., description="Sensör CSV'si (biçim: docs/data-format.md). Ünite başına en az 24 saat."
         ),
         setpoint: Optional[float] = Query(
             None, description="CSV'de set sütunu yoksa termostat set değeri (°C)."

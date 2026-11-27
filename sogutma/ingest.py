@@ -7,7 +7,7 @@ sinyaller. Sorunlar Türkçe mesajlarla `ValidationError` olarak (ölümcül) ya
 
 Eksik isteğe bağlı sensörler NaN sütunu olarak kalır; öznitelik çıkarımı bunları
 tolere eder, `FaultPredictor.predict` ise sağlıklı ortalamayla doldurur
-(bkz. docs/veri-formati.md).
+(bkz. docs/data-format.md).
 """
 
 from __future__ import annotations

@@ -17,7 +17,7 @@ from sogutma.veri_kalitesi import NEDEN_ADI, NOTRLEYEN, SENSOR_ADI
 TIP_SECENEKLERI = {None: "CSV'deki tip sütunu / soğuk oda", "soguk_oda": "Soğuk oda",
                    "dondurucu": "Dondurucu", "market_dolabi": "Market dolabı"}
 ORNEK = Path(__file__).resolve().parent.parent / "examples" / "ornek_veri.csv"
-DOKUMAN = "https://github.com/mirzayildiran/sogutma-ariza-tahmini/blob/main/docs/veri-formati.md"
+DOKUMAN = "https://github.com/mirzayildiran/sogutma-ariza-tahmini/blob/main/docs/data-format.md"
 
 
 @st.cache_data(show_spinner="Veri analiz ediliyor...", max_entries=4)

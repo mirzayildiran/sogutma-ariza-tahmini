@@ -4,7 +4,7 @@ Akış:  tahmin tablosu → olaylari_uret (geçişler, bekleme/cooldown, sürekl
 (konsol / e-posta / Telegram / webhook) → durum dosyası (tekrar gönderimi önler).
 
 Gizli bilgiler (SMTP parolası, Telegram token'ı, webhook sırrı) yalnızca ortam
-değişkenlerinden okunur; ayar dosyasında bulunmaz. Ayrıntı: docs/bildirimler.md
+değişkenlerinden okunur; ayar dosyasında bulunmaz. Ayrıntı: docs/notifications.md
 """
 
 import hashlib

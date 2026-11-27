@@ -1,18 +1,18 @@
 <div align="center">
 
-# ❄️ Yapay Zekâ Destekli Soğutma Arıza Tahmini
+# ❄️ AI-Powered Refrigeration Fault Prediction
 
-**Soğuk oda, dondurucu ve market dolaplarında erken arıza uyarısını araştıran kestirimci bakım prototipi.**
+**A predictive-maintenance prototype exploring early fault warnings for cold rooms, freezer rooms and supermarket display cabinets.**
 
 [![CI](https://github.com/mirzayildiran/sogutma-ariza-tahmini/actions/workflows/ci.yml/badge.svg)](https://github.com/mirzayildiran/sogutma-ariza-tahmini/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python&logoColor=white)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikitlearn&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Streamlit-Panel-FF4B4B?logo=streamlit&logoColor=white)
-![Plotly](https://img.shields.io/badge/Plotly-Grafik-3F4F75?logo=plotly&logoColor=white)
-![Lisans: MIT](https://img.shields.io/badge/Lisans-MIT-green)
-![Durum](https://img.shields.io/badge/Durum-Demo%20Prototip-orange)
+![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?logo=streamlit&logoColor=white)
+![Plotly](https://img.shields.io/badge/Plotly-Charts-3F4F75?logo=plotly&logoColor=white)
+![License: MIT](https://img.shields.io/badge/License-MIT-green)
+![Status](https://img.shields.io/badge/Status-Demo%20Prototype-orange)
 
-<img src="docs/images/filo.png" alt="Filo genel bakış paneli" width="900">
+<img src="docs/images/filo.png" alt="Fleet overview dashboard" width="900">
 
 </div>
 
@@ -20,49 +20,53 @@
 
 ## 🎯 Problem
 
-Bir soğuk odanın arızalanması; bozulan ürün, acil servis ücreti ve müşteri kaybı demektir.
-Oysa arızaların çoğu **aniden olmaz**: gaz kaçağı, kirlenen kondenser ya da aşınan kompresör,
-günler öncesinden basınç, sıcaklık, akım ve titreşim verilerinde küçük izler bırakır.
-Bu izler insan gözüyle fark edilemeyecek kadar küçüktür ama yapay zekâ onları yakalayabilir.
+When a cold room breaks down, the result is spoiled stock, an emergency service bill and lost customers.
+Yet most faults **do not happen suddenly**: a refrigerant leak, a fouled condenser or a wearing compressor
+leaves small traces in pressure, temperature, current and vibration data days in advance.
+These traces are too small for the human eye to notice, but machine learning can pick them up.
 
-**Bu proje, soğutma sistemlerinden gelen sensör verisiyle erken uyarı üretmeyi hedefleyen çalışan bir demo prototipidir.**
-Gerçek saha verisiyle doğrulanmamıştır; model ve sensör kalite sonuçları sentetik simülasyonla sınırlıdır.
+**This project is a working demo prototype that aims to generate early warnings from refrigeration sensor data.**
+It has not been validated on field data; model and sensor-quality results are limited to synthetic simulation.
 
-## ✨ Özellikler
+> **Language note:** the documentation is in English. The dashboard, CLI messages, CSV report columns and source code
+> identifiers are currently in Turkish (the project was built for the Turkish market). CLI flags such as `--tip` (equipment
+> type) and `--gonder` (send) are explained where they appear.
 
-- 🔍 **5 arıza türünü ayırt eder**: gaz kaçağı, kondenser kirlenmesi, evaporatör buzlanması, kompresör aşınması, kondenser fanı arızası
-- 🧊 **3 ekipman tipi**: soğuk oda (≈0–5 °C), dondurucu oda (≈−20 °C) ve market dolabı; model hepsinde tek çatı altında çalışır
-- ⏱️ **Arızaya kalan süreyi tahmin eder** (ör. *"~6 gün 9 saat"*)
-- 💚 **0–100 sağlık skoru**: 🟢 Normal · 🟠 İzlemede · 🔴 Kritik
-- 🧠 **Açıklanabilir tahmin**: Modelin hangi sinyale dikkat ettiğini ve normalden ne kadar saptığını gösterir
-- 🛠️ **Bakım önerisi**: Her arıza için belirtiler ve yapılması gerekenler
-- ▶️ **Canlı oynatma**: 30 günlük senaryoyu hızlandırarak izleme
-- 📥 **Kendi verini analiz et**: Panelden sensör CSV'si yükle (ya da örnek veriyi kullan), ünite başına sağlık, olası arıza ve kalan süreyi gör, saatlik raporu indir
-- 💰 **Maliyet ve kazanç (ROI) hesaplayıcı**: Kendi rakamlarınla yıllık önlenen maliyet, net fayda, geri ödeme süresi ve duyarlılık analizi
-- 🔔 **Bildirim ayarları**: Panelden uyarı kurallarını (süreklilik, bekleme süresi, sessiz saatler) ve kanalları (e-posta, Telegram, webhook) ayarla, JSON olarak indir; demo filosunda mesajları **deneme modunda** önizle (panelden gerçek gönderim yapılmaz, parola/token panelde girilmez)
-- 🧪 **Sensör kalite uyarıları**: Takılı, kopuk, kayıp, gürültülü veya fiziksel olarak tutarsız sensör okumalarını ekipman arızası tahmininden ayrı gösterir; şüpheli öznitelikleri model girdisinden nötrler. Eşikler sezgiseldir ve saha için doğrulanmamıştır.
-- 🧪 **Fizik esaslı simülatör**: Gerçek veri olmadan model geliştirme ve test
+## ✨ Features
 
-Sensör kalite kuralları sentetik profiller ve basitleştirilmiş fiziksel ilişkiler için geliştirilmiştir. Gerçek sensör verisinde yanlış
-uyarı/kaçırma oranı ölçülmemiştir; saha eşiği olarak kullanılmadan önce pilot veride kalibre edilmelidir. Ayrıntı: [Veri formatı](docs/veri-formati.md#51-sensör-sağlığı-veri-kalitesi-kontrolleri).
+- 🔍 **Distinguishes 5 fault types**: refrigerant leak, condenser fouling, evaporator icing, compressor wear, condenser fan failure
+- 🧊 **3 equipment types**: cold room (≈0–5 °C), freezer room (≈−20 °C) and supermarket display cabinet; one model covers all of them
+- ⏱️ **Estimates the time left until failure** (e.g. *"~6 days 9 hours"*)
+- 💚 **0–100 health score**: 🟢 Normal · 🟠 Watch · 🔴 Critical
+- 🧠 **Explainable predictions**: shows which signal the model focused on and how far it deviates from normal
+- 🛠️ **Maintenance recommendations**: symptoms and recommended actions for each fault
+- ▶️ **Live playback**: watch a 30-day scenario at accelerated speed
+- 📥 **Analyze your own data**: upload a sensor CSV in the dashboard (or use the sample data) to see health, likely fault and time to failure per unit, and download an hourly report
+- 💰 **Cost and benefit (ROI) calculator**: annual avoided cost, net benefit, payback period and sensitivity analysis with your own numbers
+- 🔔 **Notification settings**: configure alert rules (persistence, cooldown, quiet hours) and channels (email, Telegram, webhook) in the dashboard, export them as JSON, and preview the messages for the demo fleet in **dry-run mode** (the dashboard never sends anything and never asks for passwords or tokens)
+- 🧪 **Sensor-quality warnings**: flags stuck, disconnected, missing, noisy or physically inconsistent sensor readings separately from equipment-fault predictions, and neutralizes suspicious features in the model input. The thresholds are heuristic and have not been validated in the field.
+- 🧪 **Physics-based simulator**: develop and test models without real data
 
-## 📸 Ekran Görüntüleri
+The sensor-quality rules were developed for synthetic profiles and simplified physical relationships. False-alarm and miss rates
+on real sensor data have not been measured; they must be calibrated on pilot data before being used as field thresholds. Details: [Data format](docs/data-format.md#51-sensor-health-data-quality-checks).
+
+## 📸 Screenshots
 
 <table>
 <tr>
-<td width="50%"><b>Ünite detayı</b>: Kompresör aşınmasında titreşim ve akım yavaşça yükselir, model 15 gün önceden uyarır<br><img src="docs/images/unite_detay.png" alt="Ünite detayı"></td>
-<td width="50%"><b>Uyarılar</b>: Servis ekibine gidecek bildirimler<br><img src="docs/images/uyarilar.png" alt="Uyarılar"><br><br><b>Model performansı</b>: Hiç görülmemiş sanal üniteler üzerinde test (sentetik veri)<br><img src="docs/images/performans.png" alt="Model performansı"></td>
+<td width="50%"><b>Unit detail</b>: with compressor wear, vibration and current rise slowly; the model warns 15 days ahead<br><img src="docs/images/unite_detay.png" alt="Unit detail"></td>
+<td width="50%"><b>Alerts</b>: notifications for the service team<br><img src="docs/images/uyarilar.png" alt="Alerts"><br><br><b>Model performance</b>: tested on virtual units the model has never seen (synthetic data)<br><img src="docs/images/performans.png" alt="Model performance"></td>
 </tr>
 <tr>
-<td width="50%"><b>Kendi verini analiz et</b>: CSV yükle, veri kontrol raporunu, ünite durumunu ve sensör grafiklerini gör (örnek CSV üzerinde)<br><img src="docs/images/veri_analizi.png" alt="Kendi verini analiz et sayfası"></td>
-<td width="50%"><b>Maliyet ve kazanç</b>: Kendi rakamlarını gir; görünen başlangıç değerleri yalnızca örnek yer tutucudur<br><img src="docs/images/maliyet.png" alt="Maliyet ve kazanç hesaplayıcı"></td>
+<td width="50%"><b>Analyze your own data</b>: upload a CSV and see the data-check report, unit status and sensor charts (shown with the sample CSV)<br><img src="docs/images/veri_analizi.png" alt="Analyze your own data page"></td>
+<td width="50%"><b>Cost and benefit</b>: enter your own numbers; the starting values shown are placeholders only<br><img src="docs/images/maliyet.png" alt="Cost and benefit calculator"></td>
 </tr>
 <tr>
-<td colspan="2"><b>Bildirim ayarları</b>: Kuralları ve kanalları (e-posta / Telegram / webhook) ayarla, JSON olarak indir; demo filosunda hangi mesajların gideceğini deneme modunda önizle (hiçbir şey gönderilmez)<br><img src="docs/images/bildirim.png" alt="Bildirim ayarları sayfası" width="50%"></td>
+<td colspan="2"><b>Notification settings</b>: configure rules and channels (email / Telegram / webhook), export them as JSON, and preview which messages would be sent for the demo fleet in dry-run mode (nothing is sent)<br><img src="docs/images/bildirim.png" alt="Notification settings page" width="50%"></td>
 </tr>
 </table>
 
-## 🚀 Hızlı Başlangıç
+## 🚀 Quick Start
 
 ```bash
 git clone https://github.com/mirzayildiran/sogutma-ariza-tahmini.git
@@ -72,73 +76,72 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-İlk açılışta sentetik veri üretilir ve model eğitilir (yaklaşık 30 saniye). Sonra panel
-`http://localhost:8501` adresinde açılır. Modeli elle yeniden eğitmek için: `python train.py`
+On first launch, synthetic data is generated and the model is trained (about 30 seconds). The dashboard then opens at
+`http://localhost:8501`. To retrain the model manually: `python train.py`
 
-> 💡 Paylaşılabilir bağlantı: `http://localhost:8501/?t=470` paneli 20. günden başlatır.
+> 💡 Shareable link: `http://localhost:8501/?t=470` starts the dashboard at day 20.
 
-## 📥 Kendi Verinle Tahmin
+## 📥 Predicting on Your Own Data
 
-Panelde **📥 Kendi Verini Analiz Et** sayfasından CSV yükleyebilir (ya da *Örnek veriyi kullan* düğmesine
-basabilirsin). Panel olmadan, komut satırından da analiz edebilirsin:
-
-```bash
-python predict.py examples/ornek_veri.csv -o rapor.csv
-python predict.py dondurucu.csv --tip dondurucu   # dondurucu / market_dolabi; varsayılan soguk_oda
-```
-
-Türkçe Excel çıktıları (`;` ayraç, virgüllü ondalık, Türkçe sütun adları) desteklenir; eksik isteğe bağlı
-sensörlerde program çalışmaya devam eder. Sütunlar, birimler ve sınırlamalar için:
-[Veri formatı](docs/veri-formati.md).
-
-Saatlik çalışan bir cron işiyle birlikte **bildirim** de gönderebilir (e-posta, Telegram, webhook).
-Varsayılan deneme modudur; `--gonder` verilmeden hiçbir mesaj gönderilmez:
+You can upload a CSV on the **📥 Analyze Your Own Data** page of the dashboard (or press *Use sample data*).
+You can also analyze from the command line without the dashboard:
 
 ```bash
-python predict.py veri.csv --bildirim bildirim_ayarlari.json           # deneme modu
-python predict.py veri.csv --bildirim bildirim_ayarlari.json --gonder  # gerçek gönderim
+python predict.py examples/ornek_veri.csv -o report.csv
+python predict.py freezer.csv --tip dondurucu   # equipment type: dondurucu (freezer) / market_dolabi (display cabinet); default soguk_oda (cold room)
 ```
 
-Ayrıntılar: [Bildirimler](docs/bildirimler.md).
+Turkish Excel exports (`;` separator, decimal comma, Turkish column names) are supported; the program keeps running
+when optional sensors are missing. For columns, units and limitations, see [Data format](docs/data-format.md).
 
-## 🔌 API ve Docker
+Combined with an hourly cron job, it can also send **notifications** (email, Telegram, webhook).
+Dry-run mode is the default; no message is sent unless `--gonder` (send) is given:
 
-Aynı analiz akışı bir **REST API** olarak da sunulur (FastAPI): bir IoT ağ geçidi CSV ya da JSON ölçümlerini
-gönderip ünite başına sağlık skoru, olası arıza ve kalan süreyi alabilir.
+```bash
+python predict.py data.csv --bildirim notification_settings.json           # dry run
+python predict.py data.csv --bildirim notification_settings.json --gonder  # actually send
+```
+
+Details: [Notifications](docs/notifications.md).
+
+## 🔌 API and Docker
+
+The same analysis pipeline is also served as a **REST API** (FastAPI): an IoT gateway can send CSV or JSON measurements
+and receive the health score, likely fault and time to failure for each unit.
 
 ```bash
 pip install -r requirements-api.txt && python train.py
-uvicorn api:app --port 8000                                  # belgeler: http://localhost:8000/docs
+uvicorn api:app --port 8000                                  # docs: http://localhost:8000/docs
 curl -F dosya=@examples/ornek_veri.csv http://localhost:8000/tahmin/csv
 
-docker compose up --build        # panel: http://localhost:8501, API: http://localhost:8000
+docker compose up --build        # dashboard: http://localhost:8501, API: http://localhost:8000
 ```
 
-Uç noktalar, kimlik doğrulama (`SOGUTMA_API_ANAHTARI`), hata kodları ve ağ geçidi örneği: [REST API ve Docker](docs/api.md).
-Docker imajı oluşturulurken model eğitilir; imaj kendi kendine yeterlidir.
+Endpoints, authentication (`SOGUTMA_API_ANAHTARI`), error codes and a gateway example: [REST API and Docker](docs/api.md).
+The model is trained while the Docker image is built, so the image is self-contained.
 
-## 🏗️ Mimari
+## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Saha["🏭 Saha"]
-        S[Sensörler<br/>basınç · sıcaklık<br/>akım · titreşim]
-        K[Kontrol cihazı<br/>Carel / Dixell / Danfoss]
+    subgraph Field["🏭 Field"]
+        S[Sensors<br/>pressure · temperature<br/>current · vibration]
+        K[Controller<br/>Carel / Dixell / Danfoss]
     end
-    subgraph Veri["📦 Veri"]
-        G[IoT ağ geçidi<br/>MQTT / Modbus]
-        DB[(Zaman serisi<br/>veritabanı)]
+    subgraph Data["📦 Data"]
+        G[IoT gateway<br/>MQTT / Modbus]
+        DB[(Time-series<br/>database)]
     end
-    Q[Ham veri kalite kontrolü<br/>sensör şüphesi / temizleme]
-    subgraph AI["🧠 Yapay Zekâ"]
-        F[Öznitelik çıkarımı<br/>12 saatlik pencere]
-        A[Anomali tespiti<br/>Isolation Forest]
-        C[Arıza sınıflandırma<br/>Gradient Boosting]
-        R[Kalan süre tahmini<br/>Gradient Boosting]
-        H[Sağlık skoru]
+    Q[Raw data quality check<br/>sensor suspicion / cleaning]
+    subgraph AI["🧠 AI"]
+        F[Feature extraction<br/>12-hour window]
+        A[Anomaly detection<br/>Isolation Forest]
+        C[Fault classification<br/>Gradient Boosting]
+        R[Time-to-failure estimate<br/>Gradient Boosting]
+        H[Health score]
     end
-    P[📊 Panel]
-    N[🔔 CLI e-posta / Telegram / webhook]
+    P[📊 Dashboard]
+    N[🔔 CLI email / Telegram / webhook]
 
     S --> G
     K --> G
@@ -148,188 +151,170 @@ flowchart LR
     H & R --> P
     H --> N
 
-    SIM[🧪 Simülatör<br/>bu demoda] -.-> DB
+    SIM[🧪 Simulator<br/>in this demo] -.-> DB
 ```
 
-> Saha ağ geçidi/veritabanı henüz uygulanmadı; bu demoda ham veriyi fizik esaslı **simülatör** üretir. Bildirim paneli
-> yalnızca ayar dışa aktarır ve önizleme yapar; gerçek kanallar CLI üzerinden, açıkça etkinleştirilerek gönderilir.
+> The field gateway/database is not implemented yet; in this demo the raw data comes from the physics-based **simulator**.
+> The notification page only exports settings and shows previews; real channels are sent from the CLI and must be enabled explicitly.
 
-## ⚙️ Nasıl Çalışır?
+## ⚙️ How It Works
 
-### 1. Simülatör
-Her ünite 5 dakikalık adımlarla simüle edilir. Hesaba katılanlar: termostat kontrollü kompresör,
-periyodik defrost, kapı/müşteri erişimleri, günlük dış sıcaklık döngüsü ve R404A doyma basınçları.
-Üç ekipman tipi vardır: **soğuk oda** (6 saatte bir 20 dk defrost), **dondurucu** (−20 °C civarı; evaporasyon
-≈ −30 °C, yani ≈ 2 bar emme basıncı, sıkıştırma oranı ≈ 7, 8 saatte bir 30 dk elektrikli defrost) ve
-**market dolabı** (mağaza saatlerinde yüksek ve değişken yük, gece perdesiyle düşük yük, dar termostat bandı). Arızalar, zamanla hızlanarak ilerleyen bir **şiddet** değeri (0 → 1) olarak
-eklenir. Şiddet 1'e ulaştığında oda artık sıcaklığı tutamaz; bu an **arıza anı** sayılır.
+### 1. Simulator
+Each unit is simulated in 5-minute steps. The simulation accounts for a thermostat-controlled compressor,
+periodic defrost, door/customer access, a daily outdoor temperature cycle and R404A saturation pressures.
+There are three equipment types: **cold room** (20-minute defrost every 6 hours), **freezer room** (around −20 °C; evaporation
+≈ −30 °C, i.e. ≈ 2 bar suction pressure, compression ratio ≈ 7, 30-minute electric defrost every 8 hours) and
+**display cabinet** (high and variable load during store hours, low load at night with the night blind, narrow thermostat band).
+Faults are added as a **severity** value (0 → 1) that progresses and accelerates over time. When severity reaches 1, the room
+can no longer hold its temperature; this moment is the **failure time**.
 
-### 2. Öznitelikler
-Ham veriden saatlik olarak türetilen 15 sinyal ve 2 ekipman tipi bayrağı:
+### 2. Features
+15 signals derived hourly from the raw data, plus 2 equipment-type flags:
 
-| Sinyal | Neyi gösterir? |
+| Signal | What it indicates |
 |---|---|
-| Kızgınlık (superheat), aşırı soğutma (subcooling) | Gaz şarjı, genleşme valfi |
-| Yoğuşma − dış ortam farkı | Kondenser ve fan verimi |
-| Oda − evaporatör farkı | Evaporatör buzlanması, hava akışı |
-| Kompresör akımı, titreşim, basma hattı sıcaklığı | Kompresörün mekanik durumu |
-| Fan motor akımı | Rulman aşınması |
-| Çalışma oranı, kalkış sayısı | Sistemin genel yükü |
-| Defrost tepe sıcaklığı | Defrost rezistansının durumu |
-| Ekipman tipi bayrakları | Soğuk oda / dondurucu / market dolabı ayrımı |
+| Superheat, subcooling | Refrigerant charge, expansion valve |
+| Condensing − ambient difference | Condenser and fan efficiency |
+| Room − evaporator difference | Evaporator icing, airflow |
+| Compressor current, vibration, discharge line temperature | Mechanical condition of the compressor |
+| Fan motor current | Bearing wear |
+| Duty cycle, number of starts | Overall system load |
+| Defrost peak temperature | Condition of the defrost heater |
+| Equipment-type flags | Cold room / freezer / display cabinet |
 
-### 3. Modeller
+### 3. Models
 
-| Model | Görev | Neden? |
+| Model | Task | Why? |
 |---|---|---|
-| **Isolation Forest** | Anomali tespiti | Sadece sağlıklı veriyle eğitilir; etiket gerektirmediği için sahada ilk günden çalışır |
-| **Gradient Boosting (sınıflandırma)** | Arıza türü | Tablo verisinde güçlü ve hızlı |
-| **Gradient Boosting (regresyon)** | Arızaya kalan süre | Bakım planlaması için |
+| **Isolation Forest** | Anomaly detection | Trained on healthy data only; needs no labels, so it works in the field from day one |
+| **Gradient Boosting (classification)** | Fault type | Strong and fast on tabular data |
+| **Gradient Boosting (regression)** | Time left until failure | For maintenance planning |
 
-Sağlık skoru, sınıflandırıcının "normal" olasılığı ile anomali skorunun ağırlıklı birleşimidir.
-Tipler arası karşılaştırma için modeller ham değer yerine, **ünitenin tipine ait sağlıklı ortalamadan sapmayı** görür
-(dondurucunun normal emme basıncı ≈ 2 bar'dır; gaz kaçağı her tipte "normalden düşük basınç, yüksek kızgınlık" demektir).
+The health score is a weighted combination of the classifier's "normal" probability and the anomaly score.
+To compare equipment types, the models see the **deviation from the healthy mean of the unit's own type** instead of raw values
+(a freezer's normal suction pressure is ≈ 2 bar; a refrigerant leak means "lower-than-normal pressure, higher superheat" for every type).
 
-## 📊 Sonuçlar
+## 📊 Results
 
-Model 120 sanal ünitede (60 soğuk oda, 30 dondurucu, 30 market dolabı) eğitildi, **hiç görmediği 60 ünitede** (30 / 15 / 15) test edildi:
+The model was trained on 120 virtual units (60 cold rooms, 30 freezers, 30 display cabinets) and tested on **60 units it had never seen** (30 / 15 / 15):
 
-| Metrik | Değer |
+| Metric | Value |
 |---|---|
-| Saatlik sınıflandırma doğruluğu | %99,4 |
-| Makro F1 | 0,989 |
-| Arızayı gerçekleşmeden önce yakalama | %100 (32 / 32) |
-| Medyan erken uyarı süresi | **6,6 gün** |
-| Yanlış alarm veren sağlıklı ünite | 0 / 60 |
-| Çok sınıflı Brier / log-loss | 0,0100 / 0,0223 (ünite-kümeli bootstrap %95 GA: Brier 0,0065–0,0138; log-loss 0,0132–0,0332; kalibrasyon uygulanmadı) |
-| Koşullu ETA mutlak hata (MAE / p90) | 28,6 / 65,5 saat (MAE ünite-kümeli bootstrap %95 GA: 23,5–33,7 saat; 6 295 saat, 42 ünite) |
-| Doğru arıza türü tahmininde ETA mutlak hata (MAE / p90) | 28,1 / 64,5 saat (6 216 saat, 42 ünite) |
+| Hourly classification accuracy | 99.4% |
+| Macro F1 | 0.989 |
+| Faults caught before they occurred | 100% (32 / 32) |
+| Median early-warning lead time | **6.6 days** |
+| Healthy units with a false alarm | 0 / 60 |
+| Multiclass Brier / log-loss | 0.0100 / 0.0223 (unit-clustered bootstrap 95% CI: Brier 0.0065–0.0138; log-loss 0.0132–0.0332; no calibration applied) |
+| Conditional ETA absolute error (MAE / p90) | 28.6 / 65.5 hours (MAE unit-clustered bootstrap 95% CI: 23.5–33.7 hours; 6,295 hours, 42 units) |
+| ETA absolute error when the fault type is predicted correctly (MAE / p90) | 28.1 / 64.5 hours (6,216 hours, 42 units) |
 
-İlk ETA ölçümü alarmın doğru arıza türünü bulmasını şart koşmaz; ikinci ölçüm doğru tür eşleşmesini ister. İki ölçüm de yalnızca
-gerçek arızaya kalan süresi pozitif olan test saatlerini kapsar.
-Ham sınıf olasılıklarının 10-bin one-vs-rest reliability özeti makro ECE 0,0013 verdi; sınıf dengesizliği ve seyrek
-yüksek olasılık binleri nedeniyle bu sayı kalibrasyon kanıtı değildir. Güven aralıkları ünite kümeleri üzerinden
-hesaplanmıştır; saatler bağımsız örnek sayılmamıştır. Kalibratör veya tek ETA tahmini için tahmin aralığı yoktur.
-Tüm sayılar aynı dağılımdan üretilmiş sentetik test filosuna aittir; saha başarımı olarak yorumlanmamalıdır.
+The first ETA metric does not require the alarm to identify the correct fault type; the second one requires a correct type match. Both
+metrics cover only test hours with a positive true time to failure.
+A 10-bin one-vs-rest reliability summary of the raw class probabilities gave a macro ECE of 0.0013; because of class imbalance and sparse
+high-probability bins, this number is not evidence of calibration. Confidence intervals are computed over unit clusters;
+hours are not treated as independent samples. There is no calibrator and no prediction interval for a single ETA estimate.
+All numbers come from a synthetic test fleet generated from the same distribution; they must not be read as field performance.
 
-Sabit dış ortam kayması stresi (aynı test filosu, sentetik): −8 °C'de doğruluk %99,32 ve 1/60 yanlış alarm;
-+8 °C'de doğruluk %99,35 ve 3/60 yanlış alarm. Bu sabit ofset deneyi gerçek mevsim dayanıklılığı kanıtı değildir.
+Constant ambient-shift stress test (same test fleet, synthetic): at −8 °C, accuracy 99.32% and 1/60 false alarms;
+at +8 °C, accuracy 99.35% and 3/60 false alarms. This constant-offset experiment is not evidence of real seasonal robustness.
 
-Ekipman tipine göre (test filosunda tip başına 15–30 ünite olduğundan yalnızca yön göstericidir):
+By equipment type (indicative only, since the test fleet has 15–30 units per type):
 
-| Tip | Ünite | Saatlik doğruluk | Yakalama | Medyan erken uyarı | Yanlış alarm |
+| Type | Units | Hourly accuracy | Caught | Median early warning | False alarms |
 |---|---|---|---|---|---|
-| Soğuk oda | 30 | %99,6 | 16 / 16 | 5,2 gün | 0 |
-| Dondurucu | 15 | %99,3 | 8 / 8 | 7,3 gün | 0 |
-| Market dolabı | 15 | %99,1 | 8 / 8 | 7,7 gün | 0 |
+| Cold room | 30 | 99.6% | 16 / 16 | 5.2 days | 0 |
+| Freezer room | 15 | 99.3% | 8 / 8 | 7.3 days | 0 |
+| Display cabinet | 15 | 99.1% | 8 / 8 | 7.7 days | 0 |
 
-**Demo senaryoları** (12 ünite; "Gün N" panelin numaralamasıdır):
+**Demo scenarios** (12 units; "Day N" is the dashboard's numbering):
 
-| Ünite | Arıza | İlk uyarı | Arıza anı | Erken uyarı |
+| Unit | Fault | First warning | Failure | Early warning |
 |---|---|---|---|---|
-| A1 · Et | Gaz kaçağı | 15. gün | 22. gün | ~7 gün |
-| B1 · Sebze-Meyve | Kondenser kirlenmesi | 12. gün | 23. gün | ~11 gün |
-| C1 · Şarküteri | Evaporatör buzlanması | 18. gün | 24. gün | ~5 gün |
-| C2 · Balık | Kompresör aşınması | 11. gün | 26. gün | ~14 gün |
-| D1 · Ana Depo | Kondenser fanı | 20. gün | 25. gün | ~4 gün |
-| E2 · Dondurucu (Dondurma) | Kompresör aşınması | 11. gün | 24. gün | ~13 gün |
-| F2 · Market Dolabı (Hazır Yemek) | Gaz kaçağı | 14. gün | 22. gün | ~8 gün |
-| A2, B2, D2, E1, F1 | Sağlıklı | — | — | yanlış alarm yok ✅ |
+| A1 · Meat | Refrigerant leak | Day 15 | Day 22 | ~7 days |
+| B1 · Fruit & Veg | Condenser fouling | Day 12 | Day 23 | ~11 days |
+| C1 · Deli | Evaporator icing | Day 18 | Day 24 | ~5 days |
+| C2 · Fish | Compressor wear | Day 11 | Day 26 | ~14 days |
+| D1 · Main Store | Condenser fan | Day 20 | Day 25 | ~4 days |
+| E2 · Freezer (Ice Cream) | Compressor wear | Day 11 | Day 24 | ~13 days |
+| F2 · Display Cabinet (Ready Meals) | Refrigerant leak | Day 14 | Day 22 | ~8 days |
+| A2, B2, D2, E1, F1 | Healthy | — | — | no false alarms ✅ |
 
 > [!IMPORTANT]
-> Bu değerler **sentetik veri** üzerinde ölçülmüştür. Gerçek sahada sensör gürültüsü, arızalı sensörler,
-> aynı anda birden fazla arıza ve simülatörde modellenmeyen durumlar nedeniyle performans daha düşük
-> olacaktır. Gerçek değerler ancak pilot çalışmayla ölçülebilir.
+> These values were measured on **synthetic data**. In the field, performance will be lower because of sensor noise, faulty sensors,
+> multiple simultaneous faults and situations the simulator does not model. Real values can only be measured in a pilot.
 
-## 📚 Dokümantasyon
+## 📚 Documentation
 
-| Doküman | İçerik |
+| Document | Contents |
 |---|---|
-| [Model kartı](docs/model-karti.md) | Modelin amacı, verisi, metrikleri, sınırlamaları ve pilotta doğrulanması gerekenler |
-| [Proje başvuru taslağı](docs/proje-dokumani.md) | Ar-Ge destek başvurusu için taslak: hedefler, iş paketleri, riskler, ticarileşme |
-| [Veri formatı](docs/veri-formati.md) | Kendi CSV verini hazırlama: sütunlar, birimler, eksik sensörler |
-| [Bildirimler](docs/bildirimler.md) | Uyarı kuralları, kanallar (e-posta / Telegram / webhook), ortam değişkenleri |
-| [Saha mimarisi](docs/saha-mimarisi.md) | Gerçek sahaya geçiş: sensörler, IoT ağ geçidi, MQTT, veritabanı, güvenlik |
+| [Model card](docs/model-card.md) | The model's purpose, data, metrics, limitations and what must be validated in a pilot |
+| [Project proposal draft](docs/project-proposal.md) | Draft for an R&D funding application: objectives, work packages, risks, commercialization |
+| [Data format](docs/data-format.md) | Preparing your own CSV: columns, units, missing sensors |
+| [Notifications](docs/notifications.md) | Alert rules, channels (email / Telegram / webhook), environment variables |
+| [Field architecture](docs/field-architecture.md) | Moving to a real site: sensors, IoT gateway, MQTT, database, security |
 
-## 🧪 Testler
+## 🧪 Tests
 
 ```bash
 pip install -r requirements-dev.txt
-pytest          # simülatör, öznitelik, model ve panel testleri (~10 sn, küçük bir filoyla eğitir)
-ruff check .    # kod stili denetimi
+pytest          # simulator, feature, model and dashboard tests (~10 s, trains on a small fleet)
+ruff check .    # lint
 ```
 
-## 📁 Proje Yapısı
+## 📁 Project Structure
 
 ```
-├── app.py                  # Streamlit paneli (giriş noktası, sayfa gezinmesi)
-├── sayfalar/               # Panel sayfaları
-│   ├── filo.py             # Filo İzleme (demo filosu)
-│   ├── analiz.py           # Kendi Verini Analiz Et (CSV yükleme)
-│   ├── maliyet.py          # Maliyet ve Kazanç (ROI) hesaplayıcı
-│   └── bildirim.py         # Bildirim Ayarları (kurallar, kanallar, deneme modu önizleme)
-├── train.py                # Veri üretimi, eğitim, değerlendirme
-├── predict.py              # Kendi CSV verinle toplu tahmin
-├── api.py                  # REST API giriş noktası (uvicorn api:app); kod: sogutma/api.py
-├── Dockerfile              # Tek imaj: API + panel
-├── docker-compose.yml      # api (8000) ve panel (8501) servisleri
+├── app.py                  # Streamlit dashboard (entry point, page navigation)
+├── sayfalar/               # Dashboard pages
+│   ├── filo.py             # Fleet Monitoring (demo fleet)
+│   ├── analiz.py           # Analyze Your Own Data (CSV upload)
+│   ├── maliyet.py          # Cost and Benefit (ROI) calculator
+│   └── bildirim.py         # Notification Settings (rules, channels, dry-run preview)
+├── train.py                # Data generation, training, evaluation
+├── predict.py              # Batch prediction on your own CSV
+├── api.py                  # REST API entry point (uvicorn api:app); code: sogutma/api.py
+├── Dockerfile              # Single image: API + dashboard
+├── docker-compose.yml      # api (8000) and dashboard (8501) services
 ├── sogutma/
-│   ├── simulator.py        # Fizik esaslı simülatör: soğuk oda, dondurucu, market dolabı
-│   ├── features.py         # Öznitelik çıkarımı
-│   ├── model.py            # Anomali + sınıflandırma + kalan süre
-│   ├── ingest.py           # CSV okuma, doğrulama, 5 dk hizalama
-│   ├── bildirim.py         # Uyarı kuralları ve bildirim kanalları
-│   ├── analiz.py           # CSV/JSON → tahmin akışı (predict.py, panel ve API ortak kullanır)
-│   ├── veri_kalitesi.py    # Sensör kalite tespiti, raporlama ve şüpheli öznitelikleri nötrleme
-│   ├── api.py              # FastAPI uygulaması (tahmin servisi)
-│   ├── roi.py              # Maliyet / kazanç hesabı (saf fonksiyonlar)
-│   ├── ui.py               # Panel ortak yardımcıları (yükleme, biçimlendirme, grafikler)
-│   └── faults.py           # Arıza türleri, belirtiler, bakım önerileri
-├── examples/               # Örnek CSV ve üretim betiği
-├── tests/                  # pytest testleri
-└── docs/                   # Dokümantasyon ve ekran görüntüleri
+│   ├── simulator.py        # Physics-based simulator: cold room, freezer, display cabinet
+│   ├── features.py         # Feature extraction
+│   ├── model.py            # Anomaly + classification + time to failure
+│   ├── ingest.py           # CSV reading, validation, 5-minute alignment
+│   ├── bildirim.py         # Alert rules and notification channels
+│   ├── analiz.py           # CSV/JSON → prediction pipeline (shared by predict.py, the dashboard and the API)
+│   ├── veri_kalitesi.py    # Sensor-quality detection, reporting and neutralizing suspicious features
+│   ├── api.py              # FastAPI application (prediction service)
+│   ├── roi.py              # Cost / benefit calculation (pure functions)
+│   ├── ui.py               # Shared dashboard helpers (loading, formatting, charts)
+│   └── faults.py           # Fault types, symptoms, maintenance recommendations
+├── examples/               # Sample CSV and generator script
+├── tests/                  # pytest tests
+└── docs/                   # Documentation and screenshots
 ```
 
-## 🗺️ Yol Haritası
+## 🗺️ Roadmap
 
-- [x] Fizik esaslı simülatör ve 5 arıza senaryosu
-- [x] Anomali tespiti, arıza sınıflandırma, kalan süre tahmini
-- [x] İzleme paneli, uyarılar, açıklanabilir tahminler
-- [x] Panel: CSV yükleyip kendi verisini analiz etme sayfası
-- [x] Panel: maliyet ve kazanç (ROI) hesaplayıcı
-- [x] Dondurucu (−18 °C) ve market dolabı tipleri
-- [x] Sensör arızası simülasyonu ve sezgisel veri kalitesi uyarıları (sentetik test; saha eşiği değildir)
-- [x] REST API ve Docker Compose ile yerel prototip dağıtımı
-- [x] CLI e-posta / Telegram / webhook bildirimleri; panelde ayar dışa aktarma ve deneme önizlemesi
-- [ ] Chiller tipi
-- [x] MQTT v1 telemetry mesajı doğrulama/kanonik alan normalizer prototipi (broker bağlantısı yok)
-- [x] Yerel SQLite telemetry staging deposu; idempotent tekrar ve site/ünite scope'u (üretim DB'si değil)
-- [ ] MQTT ile canlı veri alma; yeniden bağlanma/tamponlama ve pilot sensör / IoT ağ geçidi (MQTT, Modbus)
-- [ ] Gerçek veri ve servis kayıtlarıyla modelin ince ayarı
-- [x] Sentetik doğrulama: koşullu ETA hatası, reliability binleri ve ünite-bootstrap aralıkları, kalibre edilmemiş Brier/log-loss, ±8 °C sabit ortam kayması
-- [ ] Ayrı calibration üniteleriyle olasılık kalibrasyonu ve ETA tahmin aralığı; eşzamanlı ekipman arızaları ve gerçek mevsim profilleri
-- [ ] Bulut dağıtımı ve çoklu müşteri desteği
+- [x] Physics-based simulator and 5 fault scenarios
+- [x] Anomaly detection, fault classification, time-to-failure estimation
+- [x] Monitoring dashboard, alerts, explainable predictions
+- [x] Dashboard: page for uploading a CSV and analyzing your own data
+- [x] Dashboard: cost and benefit (ROI) calculator
+- [x] Freezer (−18 °C) and display cabinet types
+- [x] Sensor-fault simulation and heuristic data-quality warnings (synthetic test; not a field threshold)
+- [x] Local prototype deployment with a REST API and Docker Compose
+- [x] CLI email / Telegram / webhook notifications; settings export and dry-run preview in the dashboard
+- [ ] Chiller type
+- [x] MQTT v1 telemetry message validation / canonical-field normalizer prototype (no broker connection)
+- [x] Local SQLite telemetry staging store; idempotent replay and site/unit scoping (not a production DB)
+- [ ] Live data ingestion over MQTT; reconnection/buffering and a pilot sensor / IoT gateway (MQTT, Modbus)
+- [ ] Fine-tuning the model with real data and service records
+- [x] Synthetic validation: conditional ETA error, reliability bins and unit-bootstrap intervals, uncalibrated Brier/log-loss, ±8 °C constant ambient shift
+- [ ] Probability calibration and ETA prediction intervals with separate calibration units; simultaneous equipment faults and real seasonal profiles
+- [ ] Cloud deployment and multi-tenant support
 
----
+Detailed roadmap: [ROADMAP.md](ROADMAP.md).
 
-<details>
-<summary>🇬🇧 English summary</summary>
-
-**Synthetic-data prototype exploring early fault warnings for commercial refrigeration (cold rooms, freezer rooms and display cabinets).** It demonstrates
-classification of five simulated fault types (refrigerant leak, condenser fouling, evaporator icing,
-compressor wear, condenser fan failure) and a rough time-to-failure estimate; it has not been validated
-on real equipment.
-
-Since no field data is available yet, a physics-inspired simulator generates sensor data (pressures,
-temperatures, currents, vibration) with progressively degrading faults. Models: Isolation Forest
-(anomaly detection), Gradient Boosting (fault classification and remaining-useful-life regression).
-On 60 unseen simulated units (mixed equipment types), every fault was caught before failure, with a median lead time of 6.6 days
-and no false alarms. These numbers are from synthetic data; real-world performance must be
-validated in a pilot.
-
-Run: `pip install -r requirements.txt && streamlit run app.py`
-</details>
-
-## 📄 Lisans
+## 📄 License
 
 [MIT](LICENSE) © 2026 Ahmet Mirza Yıldıran
